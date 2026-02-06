@@ -113,6 +113,12 @@
   transition: opacity 400ms ease;
 }
 
+/* Temperature overlay: bilinear interpolation for smooth gradient appearance.
+   The Canvas uses 8px cells, browser scaling smooths them into a continuous field. */
+.temperature-overlay img {
+  image-rendering: auto;
+}
+
 /* Severity pulse animation */
 @keyframes severity-pulse {
   0%, 100% { opacity: 1; }

@@ -34,7 +34,14 @@ export function useCommunityReports() {
 
 export function useRainViewer() {
   return useSWR("/api/v1/tiles/rainviewer", fetcher, {
-    refreshInterval: 300_000, // 5 min
+    refreshInterval: 300_000,
+    revalidateOnFocus: false,
+  })
+}
+
+export function useWeatherGrid() {
+  return useSWR("/api/v1/weather/grid", fetcher, {
+    refreshInterval: 900_000, // 15 min (matches API cache)
     revalidateOnFocus: false,
   })
 }

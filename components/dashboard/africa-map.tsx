@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { SEVERITY_CONFIG, AFRICA_CENTER, AFRICA_ZOOM } from "@/lib/constants"
 import type { HazardAlert } from "@/lib/types"
 import { MapControls, type WeatherLayer } from "./map-controls"
+import { TemperatureOverlay } from "./temperature-overlay"
+import { WindOverlay } from "./wind-overlay"
 
 const RAINVIEWER_MAX_ZOOM = 7
 const FRAME_OPACITY = 0.65
@@ -45,6 +47,19 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
   const [activeLayer, setActiveLayer] = useState<WeatherLayer>("none")
   const [alertsVisible, setAlertsVisible] = useState(true)
   const [rainViewerData, setRainViewerData] = useState<RainViewerData | null>(null)
+
+  // Weather grid data (for temperature + wind overlays)
+  const [gridData, setGridData] = useState<{
+    points: Array<{
+      lat: number
+      lon: number
+      temperature: number
+      wind_speed: number
+      wind_direction: number
+      wind_u: number
+      wind_v: number
+    }>
+  } | null>(null)
 
   // Time animation state
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0)
@@ -164,6 +179,27 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     const interval = setInterval(fetchRainViewer, 300_000)
     return () => clearInterval(interval)
   }, [])
+
+  // --- Fetch weather grid data (temperature + wind) ---
+  useEffect(() => {
+    // Only fetch when temperature or wind layer is active
+    if (activeLayer !== "temperature" && activeLayer !== "wind") return
+
+    async function fetchGrid() {
+      try {
+        const res = await fetch("/api/v1/weather/grid")
+        if (res.ok) {
+          const data = await res.json()
+          setGridData(data)
+        }
+      } catch {
+        // Degrade gracefully
+      }
+    }
+    fetchGrid()
+    const interval = setInterval(fetchGrid, 900_000) // 15 min
+    return () => clearInterval(interval)
+  }, [activeLayer])
 
   // --- FILMSTRIP: Pre-load ALL frame tile layers when layer or data changes ---
   // This is the key to smooth animation: every frame is a tile layer already on the map at opacity 0.
@@ -366,7 +402,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     setAlertsVisible((v) => !v)
   }, [])
 
-  const isZoomBeyondRadar = zoomLevel > RAINVIEWER_MAX_ZOOM && activeLayer !== "none"
+  const isZoomBeyondRadar = zoomLevel > RAINVIEWER_MAX_ZOOM && (activeLayer === "precipitation" || activeLayer === "satellite")
 
   return (
     <div className={`relative w-full h-full overflow-hidden ${borderless ? "" : "rounded-lg border border-border"}`}>
@@ -396,6 +432,19 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
           onFrameChange={handleFrameChange}
         />
       )}
+
+      {/* Canvas overlays (temperature + wind) - rendered as Leaflet layers, not DOM children */}
+      <TemperatureOverlay
+        map={mapInstanceRef.current}
+        L={leafletRef.current}
+        points={gridData?.points || []}
+        visible={activeLayer === "temperature" && isLoaded}
+      />
+      <WindOverlay
+        map={mapInstanceRef.current}
+        points={gridData?.points || []}
+        visible={activeLayer === "wind" && isLoaded}
+      />
 
       {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-card">

@@ -14,10 +14,12 @@ import {
   SkipBack,
   ChevronUp,
   ChevronDown,
+  Thermometer,
+  Wind,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-export type WeatherLayer = "precipitation" | "satellite" | "none"
+export type WeatherLayer = "precipitation" | "satellite" | "temperature" | "wind" | "none"
 
 interface MapControlsProps {
   activeLayer: WeatherLayer
@@ -98,6 +100,18 @@ export function MapControls({
               onClick={() => onLayerChange(activeLayer === "satellite" ? "none" : "satellite")}
             />
             <LayerButton
+              icon={<Thermometer className="h-3.5 w-3.5" />}
+              label="Temperature"
+              active={activeLayer === "temperature"}
+              onClick={() => onLayerChange(activeLayer === "temperature" ? "none" : "temperature")}
+            />
+            <LayerButton
+              icon={<Wind className="h-3.5 w-3.5" />}
+              label="Wind Field"
+              active={activeLayer === "wind"}
+              onClick={() => onLayerChange(activeLayer === "wind" ? "none" : "wind")}
+            />
+            <LayerButton
               icon={<MapPin className="h-3.5 w-3.5" />}
               label="Hazard Alerts"
               active={alertsVisible}
@@ -107,8 +121,25 @@ export function MapControls({
         )}
       </div>
 
-      {/* Time controls - only show when a weather layer is active */}
-      {activeLayer !== "none" && totalFrames > 0 && (
+      {/* Static layer info - temperature/wind show data freshness instead of timeline */}
+      {(activeLayer === "temperature" || activeLayer === "wind") && (
+        <div className="rounded-lg border border-border bg-card/90 backdrop-blur-md shadow-lg px-3 py-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+              {activeLayer === "temperature" ? "Temperature (ECMWF via Open-Meteo)" : "Wind Field (ECMWF via Open-Meteo)"}
+            </span>
+            <span className="text-[10px] font-mono text-primary">LIVE</span>
+          </div>
+          <p className="text-[10px] text-muted-foreground mt-1">
+            {activeLayer === "temperature"
+              ? "2m temperature grid across Africa. Color scale: blue (-10C) to red (50C)."
+              : "10m wind direction and speed. Arrow length = speed, color = intensity."}
+          </p>
+        </div>
+      )}
+
+      {/* Time controls - only show for animated layers (precipitation/satellite) */}
+      {(activeLayer === "precipitation" || activeLayer === "satellite") && totalFrames > 0 && (
         <div className="rounded-lg border border-border bg-card/90 backdrop-blur-md shadow-lg px-3 py-2">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
