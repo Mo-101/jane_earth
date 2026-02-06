@@ -1,38 +1,64 @@
 import { NextRequest, NextResponse } from "next/server"
 
 // Tile Proxy Gateway
-// Next.js acts as orchestrator + API gateway for tile services.
-// V1: proxies to free public tile servers (RainViewer, Open-Meteo)
-// V2: swap backend to self-hosted TiTiler serving COGs from weather-processor
+// Next.js = orchestrator + API gateway. NOT the tile factory.
+// V1: proxies to free public tile servers (RainViewer)
+// V2: swap backend to TiTiler serving COGs from a weather-processor service.
 
-const TILE_SOURCES: Record<string, (z: string, x: string, y: string, params: URLSearchParams) => string> = {
+// Cache the RainViewer host (it can change, so we fetch it dynamically)
+let cachedHost = "https://tilecache.rainviewer.com"
+let lastHostFetch = 0
+
+async function getRainViewerHost(): Promise<string> {
+  const now = Date.now()
+  // Refresh host every 5 minutes
+  if (now - lastHostFetch > 300_000) {
+    try {
+      const res = await fetch("https://api.rainviewer.com/public/weather-maps.json", {
+        next: { revalidate: 300 },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.host) cachedHost = data.host
+        lastHostFetch = now
+      }
+    } catch {
+      // Keep using cached host on failure
+    }
+  }
+  return cachedHost
+}
+
+// RainViewer tile URL format (from their docs):
+// {host}{path}/{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+// The `path` comes from the frames in weather-maps.json.
+// When using the proxy, the client passes `ts` (the raw path like /v2/radar/1700000000).
+
+const TILE_SOURCES: Record<
+  string,
+  (z: string, x: string, y: string, params: URLSearchParams, host: string) => string
+> = {
   // RainViewer precipitation radar (free, global, no key)
-  precipitation: (z, x, y, params) => {
-    const ts = params.get("ts") || ""
-    const colorScheme = params.get("color") || "4" // 4 = dark theme friendly
+  // Max native zoom: 7
+  precipitation: (z, x, y, params, host) => {
+    const path = params.get("path") || ""
+    const color = params.get("color") || "4" // 4 = dark theme friendly
     const smooth = params.get("smooth") || "1"
     const snow = params.get("snow") || "1"
-    return `https://tilecache.rainviewer.com/v2/radar/${ts}/256/${z}/${x}/${y}/${colorScheme}/${smooth}_${snow}.png`
+    return `${host}${path}/256/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
   },
 
   // RainViewer satellite infrared (free, global)
-  satellite: (z, x, y, params) => {
-    const ts = params.get("ts") || ""
-    const colorScheme = params.get("color") || "0"
+  satellite: (z, x, y, params, host) => {
+    const path = params.get("path") || ""
+    const color = params.get("color") || "0"
     const smooth = params.get("smooth") || "0"
     const snow = params.get("snow") || "0"
-    return `https://tilecache.rainviewer.com/v2/satellite/${ts}/256/${z}/${x}/${y}/${colorScheme}/${smooth}_${snow}.png`
+    return `${host}${path}/256/${z}/${x}/${y}/${color}/${smooth}_${snow}.png`
   },
 
-  // OpenWeatherMap tiles (free tier: 60 calls/min, 1M/month)
-  // Uncomment if OWM key is provided
-  // temperature: (z, x, y, params) => {
-  //   const key = process.env.OPENWEATHERMAP_API_KEY
-  //   return `https://tile.openweathermap.org/map/temp_new/${z}/${x}/${y}.png?appid=${key}`
-  // },
-
-  // Placeholder for TiTiler-served COGs (V2)
-  // custom: (z, x, y, params) => {
+  // Placeholder for TiTiler-served COGs (V2 swap target)
+  // custom: (z, x, y, params, host) => {
   //   const layer = params.get("cog") || "precip"
   //   return `${process.env.TITILER_URL}/cog/tiles/${z}/${x}/${y}.png?url=${layer}`
   // },
@@ -53,14 +79,20 @@ export async function GET(
     )
   }
 
-  // Clean the y param (remove .png extension if passed)
-  const cleanY = y.replace(/\.png$/, "")
+  // Enforce RainViewer zoom limit on the server side too
+  const zoomNum = parseInt(z, 10)
+  if (zoomNum > 7) {
+    // Return transparent 1x1 PNG instead of hitting upstream for tiles that don't exist
+    return new NextResponse(null, { status: 204 })
+  }
 
-  const tileUrl = sourceBuilder(z, x, cleanY, searchParams)
+  const cleanY = y.replace(/\.png$/, "")
+  const host = await getRainViewerHost()
+  const tileUrl = sourceBuilder(z, x, cleanY, searchParams, host)
 
   try {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 8000)
+    const timeout = setTimeout(() => controller.abort(), 6000)
 
     const res = await fetch(tileUrl, {
       signal: controller.signal,
@@ -69,7 +101,6 @@ export async function GET(
     clearTimeout(timeout)
 
     if (!res.ok) {
-      // Return transparent tile on upstream failure (graceful degradation)
       return new NextResponse(null, { status: 204 })
     }
 
@@ -84,7 +115,6 @@ export async function GET(
       },
     })
   } catch {
-    // Return empty 204 on timeout/network error (map shows base layer only)
     return new NextResponse(null, { status: 204 })
   }
 }

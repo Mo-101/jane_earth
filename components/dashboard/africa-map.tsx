@@ -5,6 +5,9 @@ import { SEVERITY_CONFIG, AFRICA_CENTER, AFRICA_ZOOM } from "@/lib/constants"
 import type { HazardAlert } from "@/lib/types"
 import { MapControls, type WeatherLayer } from "./map-controls"
 
+// RainViewer max tile zoom is 7. Beyond this, tiles return blank.
+const RAINVIEWER_MAX_ZOOM = 7
+
 interface RainViewerFrame {
   time: number
   path: string
@@ -26,11 +29,16 @@ interface AfricaMapProps {
 export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<import("leaflet").Map | null>(null)
-  const weatherLayerRef = useRef<import("leaflet").TileLayer | null>(null)
-  const markersLayerRef = useRef<import("leaflet").LayerGroup | null>(null)
   const leafletRef = useRef<typeof import("leaflet") | null>(null)
+  const markersLayerRef = useRef<import("leaflet").LayerGroup | null>(null)
+
+  // Double-buffer: two tile layers, we fade between them
+  const weatherLayerARef = useRef<import("leaflet").TileLayer | null>(null)
+  const weatherLayerBRef = useRef<import("leaflet").TileLayer | null>(null)
+  const activeBufferRef = useRef<"A" | "B">("A")
 
   const [isLoaded, setIsLoaded] = useState(false)
+  const [zoomLevel, setZoomLevel] = useState(AFRICA_ZOOM)
 
   // Weather layer state
   const [activeLayer, setActiveLayer] = useState<WeatherLayer>("none")
@@ -51,6 +59,22 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         : []
 
   const currentFrame = activeFrames[currentFrameIndex] || null
+
+  // Build the correct RainViewer tile URL
+  // Format: {host}{path}/256/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
+  const buildTileUrl = useCallback(
+    (frame: RainViewerFrame | null, layer: WeatherLayer): string | null => {
+      if (!frame || !rainViewerData?.host || layer === "none") return null
+      const host = rainViewerData.host
+      const path = frame.path
+      // Color scheme: 4 = dark-sky friendly for radar, 0 = original for satellite IR
+      const color = layer === "precipitation" ? "4" : "0"
+      const smooth = "1"
+      const snow = layer === "precipitation" ? "1" : "0"
+      return `${host}${path}/256/{z}/{x}/{y}/${color}/${smooth}_${snow}.png`
+    },
+    [rainViewerData]
+  )
 
   // --- Init Map ---
   useEffect(() => {
@@ -87,7 +111,11 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         })
         .addTo(map)
 
-      // Create a layer group for markers
+      // Track zoom for the radar zoom gate
+      map.on("zoomend", () => {
+        setZoomLevel(map.getZoom())
+      })
+
       const markersGroup = L.default.layerGroup().addTo(map)
       markersLayerRef.current = markersGroup
 
@@ -107,7 +135,8 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
-      weatherLayerRef.current = null
+      weatherLayerARef.current = null
+      weatherLayerBRef.current = null
       markersLayerRef.current = null
       setIsLoaded(false)
     }
@@ -121,7 +150,6 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         if (res.ok) {
           const data = await res.json()
           setRainViewerData(data)
-          // Start at the latest past frame
           const radarPast = (data.radar?.frames || []).filter(
             (f: RainViewerFrame) => f.type === "past"
           )
@@ -130,48 +158,98 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
           }
         }
       } catch {
-        // RainViewer unavailable - degrade gracefully, map still works
+        // RainViewer unavailable - degrade gracefully
       }
     }
     fetchRainViewer()
-    // Refresh every 5 minutes
     const interval = setInterval(fetchRainViewer, 300_000)
     return () => clearInterval(interval)
   }, [])
 
-  // --- Weather tile layer management ---
+  // --- Double-buffered weather tile layer management ---
+  // This is the key fix: instead of calling setUrl() on a single layer (which causes blink),
+  // we maintain two tile layers and cross-fade between them. The "back" layer loads the new
+  // frame tiles silently, then we swap opacity: the new one fades to 0.65, the old one fades to 0.
   useEffect(() => {
     if (!mapInstanceRef.current || !isLoaded || !leafletRef.current) return
     const L = leafletRef.current.default
     const map = mapInstanceRef.current
 
-    // Remove existing weather layer
-    if (weatherLayerRef.current) {
-      map.removeLayer(weatherLayerRef.current)
-      weatherLayerRef.current = null
+    const tileUrl = buildTileUrl(currentFrame, activeLayer)
+
+    // If no layer selected or zoomed beyond RainViewer limit, remove both buffers
+    if (!tileUrl || zoomLevel > RAINVIEWER_MAX_ZOOM) {
+      if (weatherLayerARef.current) {
+        map.removeLayer(weatherLayerARef.current)
+        weatherLayerARef.current = null
+      }
+      if (weatherLayerBRef.current) {
+        map.removeLayer(weatherLayerBRef.current)
+        weatherLayerBRef.current = null
+      }
+      return
     }
 
-    if (activeLayer === "none" || !rainViewerData || !currentFrame) return
+    // Determine which buffer is "front" (visible) and which is "back" (loading)
+    const isFrontA = activeBufferRef.current === "A"
+    const frontRef = isFrontA ? weatherLayerARef : weatherLayerBRef
+    const backRef = isFrontA ? weatherLayerBRef : weatherLayerARef
 
-    // Build the tile URL using RainViewer's direct tile format
-    // Template: {host}{path}/256/{z}/{x}/{y}/{color}/{smooth}_{snow}.png
-    const host = rainViewerData.host
-    const path = currentFrame.path
-    const color = activeLayer === "precipitation" ? "4" : "0" // 4 = dark-friendly for radar
-    const smooth = "1"
-    const snow = activeLayer === "precipitation" ? "1" : "0"
+    // Remove the old back layer if it exists
+    if (backRef.current) {
+      map.removeLayer(backRef.current)
+      backRef.current = null
+    }
 
-    const tileUrl = `${host}${path}/256/{z}/{x}/{y}/${color}/${smooth}_${snow}.png`
-
-    const layer = L.tileLayer(tileUrl, {
-      opacity: 0.65,
+    // Create new back layer with the new frame's tiles
+    const newLayer = L.tileLayer(tileUrl, {
+      opacity: 0,
       zIndex: 10,
+      maxNativeZoom: RAINVIEWER_MAX_ZOOM,
+      maxZoom: 10, // allow map to zoom beyond, but tiles stop at 7
       attribution: '&copy; <a href="https://rainviewer.com">RainViewer</a>',
     })
 
-    layer.addTo(map)
-    weatherLayerRef.current = layer
-  }, [activeLayer, currentFrame, rainViewerData, isLoaded])
+    newLayer.addTo(map)
+    backRef.current = newLayer
+
+    // When the new layer's tiles finish loading, swap: fade new in, fade old out
+    newLayer.on("load", () => {
+      // Fade in the new layer
+      newLayer.setOpacity(0.65)
+
+      // Fade out and remove the old front layer
+      if (frontRef.current) {
+        frontRef.current.setOpacity(0)
+        // Remove after a short delay to avoid flicker
+        setTimeout(() => {
+          if (frontRef.current && mapInstanceRef.current) {
+            mapInstanceRef.current.removeLayer(frontRef.current)
+            frontRef.current = null
+          }
+        }, 150)
+      }
+
+      // Swap the active buffer pointer
+      activeBufferRef.current = isFrontA ? "B" : "A"
+    })
+
+    // Fallback: if tiles don't load within 2s (e.g. offline), force swap anyway
+    const fallbackTimer = setTimeout(() => {
+      if (backRef.current && backRef.current.options.opacity === 0) {
+        backRef.current.setOpacity(0.65)
+        if (frontRef.current && mapInstanceRef.current) {
+          mapInstanceRef.current.removeLayer(frontRef.current)
+          frontRef.current = null
+        }
+        activeBufferRef.current = isFrontA ? "B" : "A"
+      }
+    }, 2000)
+
+    return () => {
+      clearTimeout(fallbackTimer)
+    }
+  }, [activeLayer, currentFrame, rainViewerData, isLoaded, zoomLevel, buildTileUrl])
 
   // --- Alert markers ---
   useEffect(() => {
@@ -196,7 +274,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
               ? 6
               : 5
 
-      const marker = L.circleMarker([alert.latitude, alert.longitude], {
+      const marker = L.default.circleMarker([alert.latitude, alert.longitude], {
         radius,
         fillColor: config.color,
         color: config.color,
@@ -236,7 +314,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
           const next = prev + 1
           return next >= activeFrames.length ? 0 : next
         })
-      }, 800) // 800ms per frame = smooth enough for radar playback
+      }, 1000) // 1s per frame - gives tiles time to load with double-buffer
     }
 
     return () => {
@@ -279,13 +357,25 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     setAlertsVisible((v) => !v)
   }, [])
 
+  // Whether the zoom is too high for radar tiles
+  const isZoomBeyondRadar = zoomLevel > RAINVIEWER_MAX_ZOOM && activeLayer !== "none"
+
   return (
     <div
       className={`relative w-full h-full overflow-hidden ${borderless ? "" : "rounded-lg border border-border"}`}
     >
       <div ref={mapRef} className="w-full h-full" />
 
-      {/* Map controls - layers + time playback */}
+      {/* Zoom warning when beyond RainViewer limit */}
+      {isZoomBeyondRadar && isLoaded && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-[500] px-3 py-1.5 rounded-md bg-severity-yellow/20 border border-severity-yellow/30 backdrop-blur-md">
+          <span className="text-xs font-semibold text-severity-yellow font-mono">
+            Zoom out to see weather overlay (max zoom {RAINVIEWER_MAX_ZOOM})
+          </span>
+        </div>
+      )}
+
+      {/* Map controls */}
       {isLoaded && (
         <MapControls
           activeLayer={activeLayer}
