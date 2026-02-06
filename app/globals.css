@@ -107,6 +107,12 @@
   color: hsl(199 89% 48%) !important;
 }
 
+/* Filmstrip: smooth cross-fade between radar/satellite tile layers.
+   Applied via CSS so it works even if JS getContainer() misses a layer. */
+.leaflet-tile-pane .leaflet-layer {
+  transition: opacity 400ms ease;
+}
+
 /* Severity pulse animation */
 @keyframes severity-pulse {
   0%, 100% { opacity: 1; }
