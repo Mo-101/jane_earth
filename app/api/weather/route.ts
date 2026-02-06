@@ -73,8 +73,8 @@ export async function GET() {
     return NextResponse.json({
       source: "OPEN_METEO",
       count: weatherData.length,
-      data: weatherData,
-      timestamp: new Date().toISOString(),
+      cities: weatherData,
+      updated_at: new Date().toISOString(),
     })
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : "Unknown error"
