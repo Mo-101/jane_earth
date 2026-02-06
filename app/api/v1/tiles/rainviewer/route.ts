@@ -39,6 +39,9 @@ export async function GET() {
 
     const data: RainViewerMaps = await res.json()
 
+    // Ensure host always has protocol (RainViewer usually returns https:// but guard against it)
+    const host = data.host.startsWith("http") ? data.host : `https://${data.host}`
+
     // Combine past + nowcast for full timeline (past ~2hrs + forecast ~30min)
     const radarFrames = [
       ...data.radar.past.map((f) => ({ time: f.time, path: f.path, type: "past" as const })),
@@ -52,7 +55,7 @@ export async function GET() {
     }))
 
     return NextResponse.json({
-      host: data.host,
+      host,
       generated: data.generated,
       radar: {
         frames: radarFrames,

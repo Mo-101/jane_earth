@@ -58,6 +58,11 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         ? rainViewerData?.satellite.frames || []
         : []
 
+  // Clamp frame index when frames array changes (RainViewer refresh can change length)
+  useEffect(() => {
+    setCurrentFrameIndex((i) => Math.min(i, Math.max(0, activeFrames.length - 1)))
+  }, [activeFrames.length])
+
   const currentFrame = activeFrames[currentFrameIndex] || null
 
   // Build the correct RainViewer tile URL
@@ -177,8 +182,9 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
 
     const tileUrl = buildTileUrl(currentFrame, activeLayer)
 
-    // If no layer selected or zoomed beyond RainViewer limit, remove both buffers
-    if (!tileUrl || zoomLevel > RAINVIEWER_MAX_ZOOM) {
+    // If no layer selected, remove both buffers. Do NOT remove on zoom > 7.
+    // maxNativeZoom will tell Leaflet to scale z7 tiles; we just show the warning banner.
+    if (!tileUrl) {
       if (weatherLayerARef.current) {
         map.removeLayer(weatherLayerARef.current)
         weatherLayerARef.current = null
@@ -204,9 +210,11 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     // Create new back layer with the new frame's tiles (step 1: opacity 0)
     const newLayer = L.tileLayer(tileUrl, {
       opacity: 0,
-      zIndex: 10,
+      zIndex: 500,
       maxNativeZoom: RAINVIEWER_MAX_ZOOM,
-      maxZoom: 10, // allow map to zoom beyond, but Leaflet reuses z7 tiles (scaled)
+      maxZoom: 10,
+      updateWhenZooming: false,
+      keepBuffer: 2,
       attribution: '&copy; <a href="https://rainviewer.com">RainViewer</a>',
     })
 
@@ -227,29 +235,29 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
       // Step 5: fade front (old) layer out
       if (frontRef.current) frontRef.current.setOpacity(0)
 
-      // Step 6: remove old front after brief delay so user never sees empty
+      // Step 6: remove old front after delay (350ms for slow African mobile networks)
       setTimeout(() => {
         if (frontRef.current && mapInstanceRef.current) {
           mapInstanceRef.current.removeLayer(frontRef.current)
           frontRef.current = null
         }
-      }, 100)
+      }, 350)
 
       // Flip the buffer pointer
       activeBufferRef.current = isFrontA ? "B" : "A"
     }
 
-    // Step 3: wait for tiles to load, then swap
-    newLayer.on("load", doSwap)
+    // Step 3: wait for tiles to load, then swap. Use .once() to prevent stale closures.
+    newLayer.once("load", doSwap)
 
     // Fallback: if tiles don't load within 2s (slow network / offline), force swap
-    // The `swapped` guard ensures this is a no-op if `load` already fired.
     const fallbackTimer = setTimeout(doSwap, 2000)
 
     return () => {
       clearTimeout(fallbackTimer)
+      newLayer.off("load", doSwap)
     }
-  }, [activeLayer, currentFrame, rainViewerData, isLoaded, zoomLevel, buildTileUrl])
+  }, [activeLayer, currentFrame, rainViewerData, isLoaded, buildTileUrl])
 
   // --- Alert markers ---
   useEffect(() => {
