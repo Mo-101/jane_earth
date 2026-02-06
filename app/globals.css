@@ -113,10 +113,12 @@
   transition: opacity 400ms ease;
 }
 
-/* Temperature overlay: bilinear interpolation for smooth gradient appearance.
-   The Canvas uses 8px cells, browser scaling smooths them into a continuous field. */
+/* Temperature overlay: 1px-per-grid-point canvas stretched across Africa.
+   Browser bilinear scaling (image-rendering: auto) interpolates between points.
+   Additional 2px blur softens any remaining grid artifacts at close zoom. */
 .temperature-overlay img {
   image-rendering: auto;
+  filter: blur(2px);
 }
 
 /* Severity pulse animation */

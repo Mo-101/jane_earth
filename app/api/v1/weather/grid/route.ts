@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server"
 
-// Africa bounding box - 5x5 degree grid (coarse for performance, fine enough for continental view)
-// Covers roughly -35S to 38N, -18W to 52E
-const LAT_MIN = -35
+// Africa bounding box - 2x2 degree grid (~37x36 = 1332 points)
+// Open-Meteo handles up to ~10000 in one call. 2-deg gives smooth continental coverage.
+const LAT_MIN = -36
 const LAT_MAX = 38
 const LON_MIN = -18
 const LON_MAX = 52
-const STEP = 5 // degrees between grid points
+const STEP = 2 // degrees between grid points
 
 function generateGrid(): { lats: number[]; lons: number[] } {
   const lats: number[] = []

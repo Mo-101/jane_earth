@@ -17,7 +17,6 @@ interface TemperatureOverlayProps {
 }
 
 // Temperature color ramp: -10C to 50C covering Africa's full range
-// Blue (cold) -> Cyan -> Green -> Yellow -> Orange -> Red -> Magenta (extreme heat)
 const TEMP_STOPS: [number, [number, number, number]][] = [
   [-10, [50, 50, 180]],
   [0, [70, 100, 220]],
@@ -56,7 +55,6 @@ export function TemperatureOverlay({ map, L, points, visible, opacity = 0.55 }: 
 
   useEffect(() => {
     if (!map || !L || !visible || points.length === 0) {
-      // Remove overlay
       if (overlayRef.current && map) {
         map.removeLayer(overlayRef.current)
         overlayRef.current = null
@@ -72,57 +70,72 @@ export function TemperatureOverlay({ map, L, points, visible, opacity = 0.55 }: 
     const lonMin = Math.min(...lons)
     const lonMax = Math.max(...lons)
 
-    // Determine grid dimensions from the data
-    const uniqueLats = [...new Set(lats)].sort((a, b) => a - b)
+    // Determine native grid dimensions
+    const uniqueLats = [...new Set(lats)].sort((a, b) => b - a) // descending: top of image = max lat
     const uniqueLons = [...new Set(lons)].sort((a, b) => a - b)
     const rows = uniqueLats.length
     const cols = uniqueLons.length
 
-    // Canvas: each grid cell = 8px for smooth bilinear-feel via CSS scaling
-    const cellSize = 8
-    const canvasWidth = cols * cellSize
-    const canvasHeight = rows * cellSize
+    if (rows < 2 || cols < 2) return
 
-    // Create or reuse canvas
+    // KEY FIX: Canvas is exactly 1 pixel per grid point.
+    // The browser's bilinear image scaling will interpolate between
+    // neighboring pixels when Leaflet stretches this tiny image across
+    // the full geo-extent, producing a smooth continuous gradient.
     if (!canvasRef.current) {
       canvasRef.current = document.createElement("canvas")
     }
     const canvas = canvasRef.current
-    canvas.width = canvasWidth
-    canvas.height = canvasHeight
+    canvas.width = cols
+    canvas.height = rows
+
     const ctx = canvas.getContext("2d")
     if (!ctx) return
 
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight)
+    // Use ImageData for direct pixel manipulation (fastest path)
+    const imageData = ctx.createImageData(cols, rows)
+    const data = imageData.data
 
-    // Build a lookup map from lat+lon to temperature
+    // Build lookup: lat+lon -> temperature
     const tempMap = new Map<string, number>()
     for (const p of points) {
       tempMap.set(`${p.lat},${p.lon}`, p.temperature)
     }
 
-    // Paint each cell
+    // Paint 1 pixel per grid point
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const lat = uniqueLats[rows - 1 - row] // top of canvas = max lat
+        const lat = uniqueLats[row] // descending order = top row is max lat
         const lon = uniqueLons[col]
-        const key = `${lat},${lon}`
-        const temp = tempMap.get(key)
+        const temp = tempMap.get(`${lat},${lon}`)
 
+        const idx = (row * cols + col) * 4
         if (temp !== undefined) {
           const [r, g, b] = tempToColor(temp)
-          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.85)`
-          ctx.fillRect(col * cellSize, row * cellSize, cellSize, cellSize)
+          data[idx] = r
+          data[idx + 1] = g
+          data[idx + 2] = b
+          data[idx + 3] = 220 // slightly transparent per-pixel
+        } else {
+          // Missing data point: fully transparent
+          data[idx + 3] = 0
         }
       }
     }
 
+    ctx.putImageData(imageData, 0, 0)
+
+    // Export as data URL. The browser will bilinearly interpolate when
+    // this tiny image (e.g. 15x15) is stretched across the continent.
     const imgUrl = canvas.toDataURL("image/png")
 
-    // Leaflet image overlay, geo-registered
-    const bounds = L.default.latLngBounds(
-      L.default.latLng(latMin, lonMin),
-      L.default.latLng(latMax, lonMax)
+    // Geo-registered Leaflet image overlay
+    // Extend bounds by half a grid cell so pixels are centered on their coordinates
+    const latStep = Math.abs(uniqueLats[0] - uniqueLats[1]) / 2
+    const lonStep = Math.abs(uniqueLons[1] - uniqueLons[0]) / 2
+    const bounds = L.latLngBounds(
+      L.latLng(latMin - latStep, lonMin - lonStep),
+      L.latLng(latMax + latStep, lonMax + lonStep),
     )
 
     // Remove old overlay before adding new
@@ -130,11 +143,11 @@ export function TemperatureOverlay({ map, L, points, visible, opacity = 0.55 }: 
       map.removeLayer(overlayRef.current)
     }
 
-    const overlay = L.default.imageOverlay(imgUrl, bounds, {
+    const overlay = L.imageOverlay(imgUrl, bounds, {
       opacity,
       interactive: false,
       className: "temperature-overlay",
-      zIndex: 450, // below weather radar (500) but above basemap
+      zIndex: 450,
     })
     overlay.addTo(map)
     overlayRef.current = overlay
