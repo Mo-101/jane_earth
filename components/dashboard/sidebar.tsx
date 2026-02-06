@@ -1,11 +1,11 @@
 "use client"
 
-import React from "react"
-
+import React, { Suspense } from "react"
+import Link from "next/link"
+import { usePathname, useSearchParams } from "next/navigation"
 import {
-  LayoutDashboard,
-  AlertTriangle,
   Map,
+  AlertTriangle,
   Cloud,
   Users,
   Activity,
@@ -15,20 +15,9 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-export type DashboardView =
-  | "overview"
-  | "alerts"
-  | "map"
-  | "weather"
-  | "community"
-  | "storms"
-  | "analytics"
-  | "pipeline"
-
 interface SidebarProps {
-  currentView: DashboardView
-  onViewChange: (view: DashboardView) => void
   isOpen: boolean
+  onClose: () => void
   alertCounts?: {
     red: number
     orange: number
@@ -37,86 +26,113 @@ interface SidebarProps {
   }
 }
 
-const NAV_ITEMS: Array<{
-  id: DashboardView
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-  section?: string
-}> = [
-  { id: "overview", label: "Command Center", icon: LayoutDashboard, section: "Operations" },
-  { id: "alerts", label: "Active Alerts", icon: AlertTriangle, section: "Operations" },
-  { id: "map", label: "Threat Map", icon: Map, section: "Operations" },
-  { id: "weather", label: "Weather Intel", icon: Cloud, section: "Intelligence" },
-  { id: "storms", label: "Storm Tracker", icon: Activity, section: "Intelligence" },
-  { id: "community", label: "Field Reports", icon: Users, section: "Community" },
-  { id: "analytics", label: "Analytics", icon: BarChart3, section: "System" },
-  { id: "pipeline", label: "Data Pipeline", icon: Database, section: "System" },
+const NAV_ITEMS = [
+  { href: "/", view: null, label: "Threat Map", icon: Map, section: "Operations" },
+  { href: "/analytics", view: null, label: "Command Center", icon: BarChart3, section: "Operations" },
+  { href: "/analytics?view=alerts", view: "alerts", label: "Active Alerts", icon: AlertTriangle, section: "Operations" },
+  { href: "/analytics?view=weather", view: "weather", label: "Weather Intel", icon: Cloud, section: "Intelligence" },
+  { href: "/analytics?view=storms", view: "storms", label: "Storm Tracker", icon: Activity, section: "Intelligence" },
+  { href: "/analytics?view=community", view: "community", label: "Field Reports", icon: Users, section: "Community" },
+  { href: "/analytics?view=pipeline", view: "pipeline", label: "Data Pipeline", icon: Database, section: "System" },
 ]
 
-export function DashboardSidebar({
-  currentView,
-  onViewChange,
-  isOpen,
-  alertCounts,
-}: SidebarProps) {
+function SidebarNav({ onClose, alertCounts }: { onClose: () => void; alertCounts?: SidebarProps["alertCounts"] }) {
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const currentView = searchParams.get("view")
   const totalRed = alertCounts?.red || 0
   const totalOrange = alertCounts?.orange || 0
 
   let currentSection = ""
 
+  function isActive(item: typeof NAV_ITEMS[number]) {
+    if (item.href === "/") return pathname === "/"
+    if (item.href === "/analytics" && item.view === null) {
+      return pathname === "/analytics" && !currentView
+    }
+    if (item.view) {
+      return pathname === "/analytics" && currentView === item.view
+    }
+    return false
+  }
+
+  return (
+    <nav className="px-2 space-y-0.5" role="navigation" aria-label="Main navigation">
+      {NAV_ITEMS.map((item) => {
+        const showSection = item.section !== currentSection
+        if (showSection) currentSection = item.section!
+        const Icon = item.icon
+        const active = isActive(item)
+
+        return (
+          <div key={item.href}>
+            {showSection && (
+              <p className="px-3 pt-4 pb-1.5 text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
+                {item.section}
+              </p>
+            )}
+            <Link
+              href={item.href}
+              onClick={onClose}
+              className={cn(
+                "w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
+                active
+                  ? "bg-primary/10 text-primary font-medium border border-primary/20"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{item.label}</span>
+
+              {item.label === "Active Alerts" && totalRed > 0 && (
+                <span className="ml-auto text-[10px] font-bold bg-severity-red/20 text-severity-red px-1.5 py-0.5 rounded-full animate-severity-pulse">
+                  {totalRed}
+                </span>
+              )}
+              {item.label === "Active Alerts" && totalRed === 0 && totalOrange > 0 && (
+                <span className="ml-auto text-[10px] font-bold bg-severity-orange/20 text-severity-orange px-1.5 py-0.5 rounded-full">
+                  {totalOrange}
+                </span>
+              )}
+            </Link>
+          </div>
+        )
+      })}
+    </nav>
+  )
+}
+
+export function DashboardSidebar({ isOpen, onClose, alertCounts }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 w-56 bg-sidebar border-r border-sidebar-border flex flex-col transition-transform duration-200 lg:relative lg:translate-x-0",
+        "fixed inset-y-0 left-0 z-40 w-56 bg-card border-r border-border flex flex-col transition-transform duration-200 lg:relative lg:translate-x-0",
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}
     >
-      <div className="flex-1 py-4 overflow-y-auto">
-        <nav className="px-2 space-y-0.5" role="navigation" aria-label="Main navigation">
-          {NAV_ITEMS.map((item) => {
-            const showSection = item.section !== currentSection
-            if (showSection) currentSection = item.section!
-            const Icon = item.icon
-
-            return (
-              <div key={item.id}>
-                {showSection && (
-                  <p className="px-3 pt-4 pb-1.5 text-[10px] font-semibold tracking-widest uppercase text-muted-foreground">
-                    {item.section}
-                  </p>
-                )}
-                <button
-                  onClick={() => onViewChange(item.id)}
-                  className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
-                    currentView === item.id
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                      : "text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-                  )}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{item.label}</span>
-
-                  {item.id === "alerts" && totalRed > 0 && (
-                    <span className="ml-auto text-[10px] font-bold bg-severity-red/20 text-severity-red px-1.5 py-0.5 rounded-full animate-severity-pulse">
-                      {totalRed}
-                    </span>
-                  )}
-                  {item.id === "alerts" && totalRed === 0 && totalOrange > 0 && (
-                    <span className="ml-auto text-[10px] font-bold bg-severity-orange/20 text-severity-orange px-1.5 py-0.5 rounded-full">
-                      {totalOrange}
-                    </span>
-                  )}
-                </button>
-              </div>
-            )
-          })}
-        </nav>
+      {/* Logo */}
+      <div className="hidden lg:flex items-center gap-2.5 px-4 h-14 border-b border-border shrink-0">
+        <div className="relative">
+          <div className="h-8 w-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
+            <Activity className="h-4 w-4 text-primary" />
+          </div>
+          <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-severity-green border-2 border-card animate-severity-pulse" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-foreground leading-none tracking-tight">AFRO STORM</p>
+          <p className="text-[9px] text-muted-foreground tracking-widest uppercase mt-0.5">Early Warning</p>
+        </div>
       </div>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="flex-1 py-3 overflow-y-auto">
+        <Suspense fallback={null}>
+          <SidebarNav onClose={onClose} alertCounts={alertCounts} />
+        </Suspense>
+      </div>
+
+      <div className="p-3 border-t border-border">
         <button
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
           onClick={() => {}}
         >
           <Settings className="h-4 w-4" />

@@ -7,9 +7,10 @@ import type { HazardAlert } from "@/lib/types"
 interface AfricaMapProps {
   alerts: HazardAlert[]
   onAlertClick?: (alert: HazardAlert) => void
+  borderless?: boolean
 }
 
-export function AfricaMap({ alerts, onAlertClick }: AfricaMapProps) {
+export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<unknown>(null)
   const [isLoaded, setIsLoaded] = useState(false)
@@ -117,7 +118,7 @@ export function AfricaMap({ alerts, onAlertClick }: AfricaMapProps) {
   }, [alerts, isLoaded, onAlertClick])
 
   return (
-    <div className="relative w-full h-full rounded-lg overflow-hidden border border-border">
+    <div className={`relative w-full h-full overflow-hidden ${borderless ? "" : "rounded-lg border border-border"}`}>
       <div ref={mapRef} className="w-full h-full" />
       {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-card">
