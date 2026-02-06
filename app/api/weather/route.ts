@@ -43,10 +43,14 @@ export async function GET() {
     const latitudes = AFRICAN_CAPITALS.map((c) => c.lat).join(",")
     const longitudes = AFRICAN_CAPITALS.map((c) => c.lon).join(",")
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12000) // 12s timeout
+
     const response = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${latitudes}&longitude=${longitudes}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,surface_pressure,weather_code,cloud_cover&timezone=auto`,
-      { next: { revalidate: 600 } }
+      { signal: controller.signal, next: { revalidate: 600 } }
     )
+    clearTimeout(timeout)
 
     if (!response.ok) {
       throw new Error(`Open-Meteo API returned ${response.status}`)

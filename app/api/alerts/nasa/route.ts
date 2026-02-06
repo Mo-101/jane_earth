@@ -9,7 +9,7 @@ interface EONETEvent {
   sources: Array<{ url: string }>
 }
 
-function mapNASACategory(categories: EONETEvent["categories"]): string {
+function mapCategory(categories: EONETEvent["categories"]): string {
   const cat = (categories?.[0]?.title || "").toLowerCase()
   if (cat.includes("wildfire") || cat.includes("fire")) return "WILDFIRE"
   if (cat.includes("flood")) return "FLOOD"
@@ -23,8 +23,7 @@ function mapNASACategory(categories: EONETEvent["categories"]): string {
 
 function isInAfrica(coords: number[]): boolean {
   if (!coords || coords.length < 2) return false
-  const [lon, lat] = coords
-  return lat >= -40 && lat <= 40 && lon >= -25 && lon <= 55
+  return coords[1] >= -40 && coords[1] <= 40 && coords[0] >= -25 && coords[0] <= 55
 }
 
 export async function GET() {
@@ -32,14 +31,16 @@ export async function GET() {
   const sql = getDb()
 
   try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15000)
+
     const response = await fetch(
       "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=200",
-      { next: { revalidate: 600 } }
+      { signal: controller.signal, next: { revalidate: 600 } }
     )
+    clearTimeout(timeout)
 
-    if (!response.ok) {
-      throw new Error(`NASA EONET API returned ${response.status}`)
-    }
+    if (!response.ok) throw new Error(`NASA EONET API returned ${response.status}`)
 
     const data = await response.json()
     const events: EONETEvent[] = data?.events || []
@@ -50,34 +51,36 @@ export async function GET() {
     })
 
     let inserted = 0
+    let updated = 0
 
     for (const event of africaEvents) {
       const lastGeo = event.geometry[event.geometry.length - 1]
       const externalId = `NASA-${event.id}`
 
       try {
-        const existing = await sql`
-          SELECT id FROM hazard_alerts WHERE external_id = ${externalId}
+        const result = await sql`
+          INSERT INTO hazard_alerts (
+            external_id, source, hazard_type, severity, title, description,
+            latitude, longitude, event_start, is_active, source_url
+          ) VALUES (
+            ${externalId}, 'NASA_EONET', ${mapCategory(event.categories)},
+            'YELLOW',
+            ${event.title},
+            ${`NASA EONET: ${event.categories?.[0]?.title || "Natural Event"}`},
+            ${lastGeo.coordinates[1]}, ${lastGeo.coordinates[0]},
+            ${event.geometry[0]?.date || null},
+            true,
+            ${event.sources?.[0]?.url || null}
+          )
+          ON CONFLICT (external_id) DO UPDATE SET
+            latitude = EXCLUDED.latitude,
+            longitude = EXCLUDED.longitude,
+            is_active = true,
+            updated_at = NOW()
+          RETURNING (xmax = 0) AS is_insert
         `
-
-        if (existing.length === 0) {
-          await sql`
-            INSERT INTO hazard_alerts (
-              external_id, source, hazard_type, severity, title, description,
-              latitude, longitude, event_start, is_active, source_url
-            ) VALUES (
-              ${externalId}, 'NASA_EONET', ${mapNASACategory(event.categories)},
-              'YELLOW',
-              ${event.title},
-              ${`NASA EONET event: ${event.categories?.[0]?.title || "Natural Event"}`},
-              ${lastGeo.coordinates[1]}, ${lastGeo.coordinates[0]},
-              ${event.geometry[0]?.date || null},
-              true,
-              ${event.sources?.[0]?.url || null}
-            )
-          `
-          inserted++
-        }
+        if (result[0]?.is_insert) inserted++
+        else updated++
       } catch {
         // Skip individual errors
       }
@@ -85,16 +88,13 @@ export async function GET() {
 
     const elapsed = Date.now() - startTime
     await sql`
-      INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, response_time_ms, completed_at)
-      VALUES ('NASA_EONET', 'events', 'SUCCESS', ${africaEvents.length}, ${inserted}, ${elapsed}, NOW())
+      INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, records_updated, response_time_ms, completed_at)
+      VALUES ('NASA_EONET', 'events', 'SUCCESS', ${africaEvents.length}, ${inserted}, ${updated}, ${elapsed}, NOW())
     `
 
     return NextResponse.json({
-      source: "NASA_EONET",
-      total_fetched: events.length,
-      africa_filtered: africaEvents.length,
-      inserted,
-      elapsed_ms: elapsed,
+      source: "NASA_EONET", total_fetched: events.length,
+      africa_filtered: africaEvents.length, inserted, updated, elapsed_ms: elapsed,
     })
   } catch (error) {
     const elapsed = Date.now() - startTime
