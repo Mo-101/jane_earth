@@ -12,19 +12,25 @@ interface AfricaMapProps {
 
 export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
-  const mapInstanceRef = useRef<unknown>(null)
+  const mapInstanceRef = useRef<import("leaflet").Map | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
 
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return
+    if (!mapRef.current) return
 
-    let L: typeof import("leaflet")
+    let cancelled = false
 
     async function initMap() {
-      L = (await import("leaflet")).default
+      const L = (await import("leaflet")).default
       await import("leaflet/dist/leaflet.css")
 
-      if (!mapRef.current) return
+      if (cancelled || !mapRef.current) return
+
+      // Destroy any previous map on this container (handles Strict Mode remount)
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove()
+        mapInstanceRef.current = null
+      }
 
       const map = L.map(mapRef.current, {
         center: AFRICA_CENTER,
@@ -42,6 +48,11 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         maxZoom: 19,
       }).addTo(map)
 
+      if (cancelled) {
+        map.remove()
+        return
+      }
+
       mapInstanceRef.current = map
       setIsLoaded(true)
     }
@@ -49,10 +60,12 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     initMap()
 
     return () => {
+      cancelled = true
       if (mapInstanceRef.current) {
-        (mapInstanceRef.current as { remove: () => void }).remove()
+        mapInstanceRef.current.remove()
         mapInstanceRef.current = null
       }
+      setIsLoaded(false)
     }
   }, [])
 
