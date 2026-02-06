@@ -109,7 +109,7 @@ export async function GET(
     return new NextResponse(buffer, {
       headers: {
         "Content-Type": res.headers.get("Content-Type") || "image/png",
-        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=600",
+        "Cache-Control": "public, max-age=120, s-maxage=300, stale-while-revalidate=86400",
         "X-Tile-Source": layer,
         "X-Tile-Upstream": new URL(tileUrl).hostname,
       },

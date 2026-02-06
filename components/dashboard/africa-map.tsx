@@ -201,50 +201,50 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
       backRef.current = null
     }
 
-    // Create new back layer with the new frame's tiles
+    // Create new back layer with the new frame's tiles (step 1: opacity 0)
     const newLayer = L.tileLayer(tileUrl, {
       opacity: 0,
       zIndex: 10,
       maxNativeZoom: RAINVIEWER_MAX_ZOOM,
-      maxZoom: 10, // allow map to zoom beyond, but tiles stop at 7
+      maxZoom: 10, // allow map to zoom beyond, but Leaflet reuses z7 tiles (scaled)
       attribution: '&copy; <a href="https://rainviewer.com">RainViewer</a>',
     })
 
+    // Step 2: add to map (invisible)
     newLayer.addTo(map)
     backRef.current = newLayer
 
-    // When the new layer's tiles finish loading, swap: fade new in, fade old out
-    newLayer.on("load", () => {
-      // Fade in the new layer
-      newLayer.setOpacity(0.65)
+    // Guard: ensure swap only fires once (prevents race between load + fallback)
+    let swapped = false
 
-      // Fade out and remove the old front layer
-      if (frontRef.current) {
-        frontRef.current.setOpacity(0)
-        // Remove after a short delay to avoid flicker
-        setTimeout(() => {
-          if (frontRef.current && mapInstanceRef.current) {
-            mapInstanceRef.current.removeLayer(frontRef.current)
-            frontRef.current = null
-          }
-        }, 150)
-      }
+    function doSwap() {
+      if (swapped) return
+      swapped = true
 
-      // Swap the active buffer pointer
-      activeBufferRef.current = isFrontA ? "B" : "A"
-    })
+      // Step 4: fade back (new) layer in
+      if (backRef.current) backRef.current.setOpacity(0.65)
 
-    // Fallback: if tiles don't load within 2s (e.g. offline), force swap anyway
-    const fallbackTimer = setTimeout(() => {
-      if (backRef.current && backRef.current.options.opacity === 0) {
-        backRef.current.setOpacity(0.65)
+      // Step 5: fade front (old) layer out
+      if (frontRef.current) frontRef.current.setOpacity(0)
+
+      // Step 6: remove old front after brief delay so user never sees empty
+      setTimeout(() => {
         if (frontRef.current && mapInstanceRef.current) {
           mapInstanceRef.current.removeLayer(frontRef.current)
           frontRef.current = null
         }
-        activeBufferRef.current = isFrontA ? "B" : "A"
-      }
-    }, 2000)
+      }, 100)
+
+      // Flip the buffer pointer
+      activeBufferRef.current = isFrontA ? "B" : "A"
+    }
+
+    // Step 3: wait for tiles to load, then swap
+    newLayer.on("load", doSwap)
+
+    // Fallback: if tiles don't load within 2s (slow network / offline), force swap
+    // The `swapped` guard ensures this is a no-op if `load` already fired.
+    const fallbackTimer = setTimeout(doSwap, 2000)
 
     return () => {
       clearTimeout(fallbackTimer)
