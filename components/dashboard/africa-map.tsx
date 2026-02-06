@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react"
 import { SEVERITY_CONFIG, AFRICA_CENTER, AFRICA_ZOOM } from "@/lib/constants"
 import type { HazardAlert } from "@/lib/types"
 import { MapControls, type WeatherLayer } from "./map-controls"
-import { TemperatureOverlay } from "./temperature-overlay"
-import { WindOverlay } from "./wind-overlay"
+import { WindParticles } from "./wind-particles"
+import { AnimatedHazards } from "./animated-hazards"
 
 const RAINVIEWER_MAX_ZOOM = 7
 const FRAME_OPACITY = 0.65
@@ -23,6 +23,14 @@ interface RainViewerData {
   satellite: { frames: RainViewerFrame[] }
 }
 
+interface WindGridPoint {
+  lat: number
+  lon: number
+  wind_u: number
+  wind_v: number
+  wind_speed: number
+}
+
 interface AfricaMapProps {
   alerts: HazardAlert[]
   onAlertClick?: (alert: HazardAlert) => void
@@ -35,7 +43,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
   const leafletRef = useRef<typeof import("leaflet") | null>(null)
   const markersLayerRef = useRef<import("leaflet").LayerGroup | null>(null)
 
-  // Filmstrip: array of pre-loaded tile layers, one per frame
+  // Filmstrip refs
   const filmstripRef = useRef<import("leaflet").TileLayer[]>([])
   const prevFrameIndexRef = useRef<number>(-1)
 
@@ -48,18 +56,8 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
   const [alertsVisible, setAlertsVisible] = useState(true)
   const [rainViewerData, setRainViewerData] = useState<RainViewerData | null>(null)
 
-  // Weather grid data (for temperature + wind overlays)
-  const [gridData, setGridData] = useState<{
-    points: Array<{
-      lat: number
-      lon: number
-      temperature: number
-      wind_speed: number
-      wind_direction: number
-      wind_u: number
-      wind_v: number
-    }>
-  } | null>(null)
+  // Wind grid data (for wind particles)
+  const [windGridPoints, setWindGridPoints] = useState<WindGridPoint[]>([])
 
   // Time animation state
   const [currentFrameIndex, setCurrentFrameIndex] = useState(0)
@@ -67,7 +65,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
   const rafRef = useRef<number | null>(null)
   const lastTickRef = useRef<number>(0)
 
-  // Get active frames based on selected layer
+  // Active frames (only for animated tile layers: precipitation / satellite)
   const activeFrames: RainViewerFrame[] =
     activeLayer === "precipitation"
       ? rainViewerData?.radar.frames || []
@@ -75,14 +73,13 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         ? rainViewerData?.satellite.frames || []
         : []
 
-  // Clamp frame index when frames array changes
   useEffect(() => {
     setCurrentFrameIndex((i) => Math.min(i, Math.max(0, activeFrames.length - 1)))
   }, [activeFrames.length])
 
   const currentFrame = activeFrames[currentFrameIndex] || null
 
-  // Build the correct RainViewer tile URL
+  // Build correct RainViewer tile URL
   const buildTileUrl = useCallback(
     (frame: RainViewerFrame, layer: WeatherLayer): string => {
       const host = rainViewerData?.host || ""
@@ -134,10 +131,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
       const markersGroup = L.default.layerGroup().addTo(map)
       markersLayerRef.current = markersGroup
 
-      if (cancelled) {
-        map.remove()
-        return
-      }
+      if (cancelled) { map.remove(); return }
 
       mapInstanceRef.current = map
       setIsLoaded(true)
@@ -146,10 +140,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     initMap()
     return () => {
       cancelled = true
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove()
-        mapInstanceRef.current = null
-      }
+      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null }
       filmstripRef.current = []
       markersLayerRef.current = null
       setIsLoaded(false)
@@ -164,50 +155,41 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         if (res.ok) {
           const data = await res.json()
           setRainViewerData(data)
-          const radarPast = (data.radar?.frames || []).filter(
-            (f: RainViewerFrame) => f.type === "past"
-          )
-          if (radarPast.length > 0) {
-            setCurrentFrameIndex(radarPast.length - 1)
-          }
+          const radarPast = (data.radar?.frames || []).filter((f: RainViewerFrame) => f.type === "past")
+          if (radarPast.length > 0) setCurrentFrameIndex(radarPast.length - 1)
         }
-      } catch {
-        // RainViewer unavailable - degrade gracefully
-      }
+      } catch { /* degrade */ }
     }
     fetchRainViewer()
     const interval = setInterval(fetchRainViewer, 300_000)
     return () => clearInterval(interval)
   }, [])
 
-  // --- Fetch weather grid data (temperature + wind) ---
+  // --- Fetch wind grid data (global) for particle animation ---
   useEffect(() => {
-    // Only fetch when temperature or wind layer is active
-    if (activeLayer !== "temperature" && activeLayer !== "wind") return
+    if (activeLayer !== "wind") {
+      // Don't fetch if wind layer isn't active
+      return
+    }
 
-    async function fetchGrid() {
+    async function fetchWindGrid() {
       try {
         const res = await fetch("/api/v1/weather/grid")
         if (res.ok) {
           const data = await res.json()
-          setGridData(data)
+          setWindGridPoints(data.points || [])
         }
-      } catch {
-        // Degrade gracefully
-      }
+      } catch { /* degrade */ }
     }
-    fetchGrid()
-    const interval = setInterval(fetchGrid, 900_000) // 15 min
+    fetchWindGrid()
+    const interval = setInterval(fetchWindGrid, 900_000)
     return () => clearInterval(interval)
   }, [activeLayer])
 
-  // --- FILMSTRIP: Pre-load ALL frame tile layers when layer or data changes ---
-  // This is the key to smooth animation: every frame is a tile layer already on the map at opacity 0.
-  // Animation just toggles opacity. No network requests during playback.
+  // --- FILMSTRIP: Pre-load ALL frame tile layers ---
   useEffect(() => {
     if (!mapInstanceRef.current || !isLoaded || !leafletRef.current) return
-    if (activeLayer === "none" || activeFrames.length === 0 || !rainViewerData?.host) {
-      // Tear down existing filmstrip
+    if ((activeLayer !== "precipitation" && activeLayer !== "satellite") || activeFrames.length === 0 || !rainViewerData?.host) {
       for (const layer of filmstripRef.current) {
         if (mapInstanceRef.current) mapInstanceRef.current.removeLayer(layer)
       }
@@ -220,15 +202,11 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     const L = leafletRef.current.default
     const map = mapInstanceRef.current
 
-    // Tear down old filmstrip before building new one
-    for (const layer of filmstripRef.current) {
-      map.removeLayer(layer)
-    }
+    for (const layer of filmstripRef.current) { map.removeLayer(layer) }
     filmstripRef.current = []
     prevFrameIndexRef.current = -1
     setFilmstripReady(false)
 
-    // Build new filmstrip: one tile layer per frame, all at opacity 0
     const layers: import("leaflet").TileLayer[] = []
 
     for (let i = 0; i < activeFrames.length; i++) {
@@ -244,25 +222,19 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
       })
 
       layer.addTo(map)
-
-      // Inject CSS transition on the tile container for smooth cross-fade
       const container = layer.getContainer()
       if (container) {
         container.style.transition = `opacity ${TRANSITION_MS}ms ease`
       }
-
       layers.push(layer)
     }
 
     filmstripRef.current = layers
-
-    // Show the current frame immediately
     const startIdx = Math.min(currentFrameIndex, layers.length - 1)
     if (layers[startIdx]) {
       layers[startIdx].setOpacity(FRAME_OPACITY)
       prevFrameIndexRef.current = startIdx
     }
-
     setFilmstripReady(true)
 
     return () => {
@@ -270,31 +242,17 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         if (mapInstanceRef.current) mapInstanceRef.current.removeLayer(layer)
       }
     }
-    // Intentionally only rebuild filmstrip when layer type or data changes, NOT on frame index change.
   }, [activeLayer, rainViewerData, isLoaded])
 
-  // --- SMOOTH FRAME TRANSITION: Toggle opacity between prev and current ---
-  // This runs on every frame index change. Because the CSS transition is already on the container,
-  // setOpacity triggers a smooth fade - no JS animation loop needed for the visual transition.
+  // --- Smooth frame transition ---
   useEffect(() => {
     if (!filmstripReady || filmstripRef.current.length === 0) return
-
     const layers = filmstripRef.current
     const prevIdx = prevFrameIndexRef.current
     const currIdx = Math.min(currentFrameIndex, layers.length - 1)
-
     if (prevIdx === currIdx) return
-
-    // Fade out previous frame
-    if (prevIdx >= 0 && prevIdx < layers.length) {
-      layers[prevIdx].setOpacity(0)
-    }
-
-    // Fade in current frame
-    if (layers[currIdx]) {
-      layers[currIdx].setOpacity(FRAME_OPACITY)
-    }
-
+    if (prevIdx >= 0 && prevIdx < layers.length) layers[prevIdx].setOpacity(0)
+    if (layers[currIdx]) layers[currIdx].setOpacity(FRAME_OPACITY)
     prevFrameIndexRef.current = currIdx
   }, [currentFrameIndex, filmstripReady])
 
@@ -315,7 +273,7 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
       const radius =
         alert.severity === "RED" ? 10 : alert.severity === "ORANGE" ? 8 : alert.severity === "YELLOW" ? 6 : 5
 
-      const marker = L.default.circleMarker([alert.latitude, alert.longitude], {
+      const marker = L.circleMarker([alert.latitude, alert.longitude], {
         radius,
         fillColor: config.color,
         color: config.color,
@@ -342,65 +300,45 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
     }
   }, [alerts, isLoaded, alertsVisible, onAlertClick])
 
-  // --- Playback: requestAnimationFrame loop for smooth timing ---
+  // --- Playback (rAF loop for tile animation) ---
   useEffect(() => {
     if (!isPlaying || activeFrames.length === 0) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
       return
     }
-
-    // Interval per frame: 1000ms base, but CSS transition takes TRANSITION_MS,
-    // so we wait at least TRANSITION_MS + 200ms breathing room per frame.
     const interval = Math.max(1000, TRANSITION_MS + 200)
 
     function tick(timestamp: number) {
       if (timestamp - lastTickRef.current >= interval) {
         lastTickRef.current = timestamp
-        setCurrentFrameIndex((prev) => {
-          const next = prev + 1
-          return next >= activeFrames.length ? 0 : next
-        })
+        setCurrentFrameIndex((prev) => (prev + 1 >= activeFrames.length ? 0 : prev + 1))
       }
       rafRef.current = requestAnimationFrame(tick)
     }
 
     lastTickRef.current = performance.now()
     rafRef.current = requestAnimationFrame(tick)
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-    }
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); rafRef.current = null }
   }, [isPlaying, activeFrames.length])
 
-  // --- Playback controls ---
+  // --- Controls ---
   const handlePlayPause = useCallback(() => setIsPlaying((p) => !p), [])
-
   const handleStepForward = useCallback(() => {
     setIsPlaying(false)
     setCurrentFrameIndex((prev) => (prev + 1 >= activeFrames.length ? 0 : prev + 1))
   }, [activeFrames.length])
-
   const handleStepBack = useCallback(() => {
     setIsPlaying(false)
     setCurrentFrameIndex((prev) => (prev - 1 < 0 ? activeFrames.length - 1 : prev - 1))
   }, [activeFrames.length])
-
-  const handleFrameChange = useCallback((index: number) => {
-    setIsPlaying(false)
-    setCurrentFrameIndex(index)
-  }, [])
-
+  const handleFrameChange = useCallback((index: number) => { setIsPlaying(false); setCurrentFrameIndex(index) }, [])
   const handleLayerChange = useCallback((layer: WeatherLayer) => {
     setActiveLayer(layer)
     setCurrentFrameIndex(0)
     setIsPlaying(false)
   }, [])
-
-  const handleToggleAlerts = useCallback(() => {
-    setAlertsVisible((v) => !v)
-  }, [])
+  const handleToggleAlerts = useCallback(() => setAlertsVisible((v) => !v), [])
 
   const isZoomBeyondRadar = zoomLevel > RAINVIEWER_MAX_ZOOM && (activeLayer === "precipitation" || activeLayer === "satellite")
 
@@ -433,17 +371,18 @@ export function AfricaMap({ alerts, onAlertClick, borderless }: AfricaMapProps) 
         />
       )}
 
-      {/* Canvas overlays (temperature + wind) - rendered as Leaflet layers, not DOM children */}
-      <TemperatureOverlay
+      {/* Animated wind particles (Canvas, driven by real Open-Meteo wind data) */}
+      <WindParticles
         map={mapInstanceRef.current}
-        L={leafletRef.current}
-        points={gridData?.points || []}
-        visible={activeLayer === "temperature" && isLoaded}
-      />
-      <WindOverlay
-        map={mapInstanceRef.current}
-        points={gridData?.points || []}
+        points={windGridPoints}
         visible={activeLayer === "wind" && isLoaded}
+      />
+
+      {/* Animated hazard visualizations (cyclone vortices, flood waves, fire glow, seismic rings) */}
+      <AnimatedHazards
+        map={mapInstanceRef.current}
+        alerts={alerts}
+        visible={activeLayer === "hazards" && isLoaded}
       />
 
       {!isLoaded && (

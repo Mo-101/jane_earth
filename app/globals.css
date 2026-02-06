@@ -113,12 +113,9 @@
   transition: opacity 400ms ease;
 }
 
-/* Temperature overlay: 1px-per-grid-point canvas stretched across Africa.
-   Browser bilinear scaling (image-rendering: auto) interpolates between points.
-   Additional 2px blur softens any remaining grid artifacts at close zoom. */
-.temperature-overlay img {
+/* Wind particle canvas: ensure no sub-pixel antialiasing artifacts */
+.leaflet-overlay-pane canvas {
   image-rendering: auto;
-  filter: blur(2px);
 }
 
 /* Severity pulse animation */

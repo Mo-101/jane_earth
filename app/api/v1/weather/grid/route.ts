@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server"
 
-// Africa bounding box - 2x2 degree grid (~37x36 = 1332 points)
-// Open-Meteo handles up to ~10000 in one call. 2-deg gives smooth continental coverage.
-const LAT_MIN = -36
-const LAT_MAX = 38
-const LON_MIN = -18
-const LON_MAX = 52
-const STEP = 2 // degrees between grid points
+// Global coverage at 5-degree resolution
+// 37 latitudes (-90 to 90) x 72 longitudes (-180 to 175) = 2,664 points
+// Well within Open-Meteo's batch limit (~10,000 per call)
+const LAT_MIN = -90
+const LAT_MAX = 90
+const LON_MIN = -180
+const LON_MAX = 175
+const STEP = 5
 
 function generateGrid(): { lats: number[]; lons: number[] } {
   const lats: number[] = []
@@ -34,13 +35,13 @@ export async function GET() {
     const lonParam = allLons.join(",")
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 15000)
+    const timeout = setTimeout(() => controller.abort(), 25000) // longer timeout for global
 
     const response = await fetch(
       `https://api.open-meteo.com/v1/forecast?latitude=${latParam}&longitude=${lonParam}` +
         `&current=temperature_2m,wind_speed_10m,wind_direction_10m,relative_humidity_2m,precipitation` +
         `&timezone=auto`,
-      { signal: controller.signal, next: { revalidate: 900 } } // cache 15 min
+      { signal: controller.signal, next: { revalidate: 900 } }
     )
     clearTimeout(timeout)
 
@@ -60,7 +61,6 @@ export async function GET() {
       wind_direction: number
       humidity: number
       precipitation: number
-      // Computed U/V wind components (m/s from km/h, math direction)
       wind_u: number
       wind_v: number
     }> = []
@@ -75,13 +75,11 @@ export async function GET() {
 
       if (temp === null) continue
 
-      // Convert wind from meteorological direction (degrees, from) to U/V components
-      // Meteorological: 0=N(from north), 90=E(from east)
-      // Math: wind blows FROM direction, so we negate
+      // Meteorological to U/V
       const wdRad = (wd * Math.PI) / 180
-      const speedMs = ws / 3.6 // km/h to m/s
-      const wind_u = -speedMs * Math.sin(wdRad) // positive = westerly (blowing east)
-      const wind_v = -speedMs * Math.cos(wdRad) // positive = southerly (blowing north)
+      const speedMs = ws / 3.6
+      const wind_u = -speedMs * Math.sin(wdRad)
+      const wind_v = -speedMs * Math.cos(wdRad)
 
       points.push({
         lat: r.latitude ?? allLats[i],
