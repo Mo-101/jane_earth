@@ -31,3 +31,10 @@ export function useCommunityReports() {
     refreshInterval: 60_000,
   })
 }
+
+export function useRainViewer() {
+  return useSWR("/api/v1/tiles/rainviewer", fetcher, {
+    refreshInterval: 300_000, // 5 min
+    revalidateOnFocus: false,
+  })
+}

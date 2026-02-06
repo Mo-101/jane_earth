@@ -96,6 +96,17 @@
   color: hsl(215 14% 55%) !important;
 }
 
+.leaflet-control-attribution {
+  background: hsl(220 18% 10% / 0.8) !important;
+  color: hsl(215 14% 55%) !important;
+  font-size: 10px !important;
+  backdrop-filter: blur(4px);
+}
+
+.leaflet-control-attribution a {
+  color: hsl(199 89% 48%) !important;
+}
+
 /* Severity pulse animation */
 @keyframes severity-pulse {
   0%, 100% { opacity: 1; }
