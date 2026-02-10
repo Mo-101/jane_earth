@@ -1,0 +1,23 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/analytics/page": "/analytics",
+  "/api/alerts/gdacs/route": "/api/alerts/gdacs",
+  "/api/alerts/nasa/route": "/api/alerts/nasa",
+  "/api/alerts/reliefweb/route": "/api/alerts/reliefweb",
+  "/api/alerts/route": "/api/alerts",
+  "/api/pipeline/ingest/route": "/api/pipeline/ingest",
+  "/api/pipeline/status/route": "/api/pipeline/status",
+  "/api/reports/route": "/api/reports",
+  "/api/v1/hazards/[type]/route": "/api/v1/hazards/[type]",
+  "/api/v1/hazards/realtime/route": "/api/v1/hazards/realtime",
+  "/api/v1/health/route": "/api/v1/health",
+  "/api/v1/pipeline/status/route": "/api/v1/pipeline/status",
+  "/api/v1/reports/[id]/verify/route": "/api/v1/reports/[id]/verify",
+  "/api/v1/reports/route": "/api/v1/reports",
+  "/api/v1/tiles/[layer]/[z]/[x]/[y]/route": "/api/v1/tiles/[layer]/[z]/[x]/[y]",
+  "/api/v1/tiles/rainviewer/route": "/api/v1/tiles/rainviewer",
+  "/api/v1/weather/grid/route": "/api/v1/weather/grid",
+  "/api/weather/route": "/api/weather",
+  "/page": "/"
+}

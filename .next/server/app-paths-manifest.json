@@ -1,0 +1,23 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/analytics/page": "app/analytics/page.js",
+  "/api/alerts/gdacs/route": "app/api/alerts/gdacs/route.js",
+  "/api/alerts/nasa/route": "app/api/alerts/nasa/route.js",
+  "/api/alerts/reliefweb/route": "app/api/alerts/reliefweb/route.js",
+  "/api/alerts/route": "app/api/alerts/route.js",
+  "/api/pipeline/ingest/route": "app/api/pipeline/ingest/route.js",
+  "/api/pipeline/status/route": "app/api/pipeline/status/route.js",
+  "/api/reports/route": "app/api/reports/route.js",
+  "/api/v1/hazards/[type]/route": "app/api/v1/hazards/[type]/route.js",
+  "/api/v1/hazards/realtime/route": "app/api/v1/hazards/realtime/route.js",
+  "/api/v1/health/route": "app/api/v1/health/route.js",
+  "/api/v1/pipeline/status/route": "app/api/v1/pipeline/status/route.js",
+  "/api/v1/reports/[id]/verify/route": "app/api/v1/reports/[id]/verify/route.js",
+  "/api/v1/reports/route": "app/api/v1/reports/route.js",
+  "/api/v1/tiles/[layer]/[z]/[x]/[y]/route": "app/api/v1/tiles/[layer]/[z]/[x]/[y]/route.js",
+  "/api/v1/tiles/rainviewer/route": "app/api/v1/tiles/rainviewer/route.js",
+  "/api/v1/weather/grid/route": "app/api/v1/weather/grid/route.js",
+  "/api/weather/route": "app/api/weather/route.js",
+  "/page": "app/page.js"
+}
