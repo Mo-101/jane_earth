@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockAlerts } from "@/lib/mock-data"
 
 const VALID_TYPES = new Set([
   "FLOOD", "DROUGHT", "CYCLONE", "LANDSLIDE",
@@ -25,6 +26,41 @@ export async function GET(
     )
   }
 
+  // Use mock data if database is not configured
+  if (!isDbConfigured()) {
+    console.log(`[API /v1/hazards/${type}] Using mock data (DATABASE_URL not set)`)
+    
+    const alerts = mockAlerts.filter(
+      a => a.is_active && a.hazard_type === hazardType && a.latitude && a.longitude
+    )
+
+    const geojson = {
+      type: "FeatureCollection" as const,
+      metadata: {
+        hazard_type: hazardType,
+        total_features: alerts.length,
+        generated_at: new Date().toISOString(),
+        api_version: "1.0.0",
+        source: "mock",
+      },
+      features: alerts.map((a) => ({
+        type: "Feature" as const,
+        id: a.id,
+        geometry: { type: "Point" as const, coordinates: [a.longitude, a.latitude] },
+        properties: {
+          id: a.id, source: a.source, severity: a.severity,
+          title: a.title, country: a.country,
+          event_start: a.event_start, population_affected: a.population_affected,
+          source_url: a.source_url,
+        },
+      })),
+    }
+
+    return NextResponse.json(geojson, {
+      headers: { "Content-Type": "application/geo+json" },
+    })
+  }
+
   const sql = getDb()
   try {
     const alerts = await sql`
@@ -45,8 +81,9 @@ export async function GET(
         total_features: alerts.length,
         generated_at: new Date().toISOString(),
         api_version: "1.0.0",
+        source: "database",
       },
-      features: alerts.map((a) => ({
+      features: alerts.map((a: any) => ({
         type: "Feature" as const,
         id: a.id,
         geometry: { type: "Point" as const, coordinates: [a.longitude, a.latitude] },
@@ -63,6 +100,7 @@ export async function GET(
       headers: { "Content-Type": "application/geo+json" },
     })
   } catch (error) {
+    console.error(`[API /v1/hazards/${type}] Database error:`, error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg, type: "INTERNAL_ERROR" }, { status: 500 })
   }

@@ -1,24 +1,29 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockReports } from "@/lib/mock-data"
 
 const VALID_HAZARDS = new Set(["FLOOD","DROUGHT","CYCLONE","LANDSLIDE","EARTHQUAKE","WILDFIRE","VOLCANO","STORM"])
 const VALID_SEVERITIES = new Set(["GREEN","YELLOW","ORANGE","RED"])
 
 // GET /api/v1/reports - list reports as GeoJSON
 export async function GET(request: Request) {
-  const sql = getDb()
   const { searchParams } = new URL(request.url)
   const status = searchParams.get("status") || "all"
   const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500)
 
-  try {
-    const reports = status === "all"
-      ? await sql`SELECT * FROM community_reports WHERE is_active = true ORDER BY reported_at DESC LIMIT ${limit}`
-      : await sql`SELECT * FROM community_reports WHERE is_active = true AND verification_status = ${status.toUpperCase()} ORDER BY reported_at DESC LIMIT ${limit}`
+  // Use mock data if database is not configured
+  if (!isDbConfigured()) {
+    console.log("[API /v1/reports] Using mock data (DATABASE_URL not set)")
+    
+    let reports = mockReports.filter(r => r.is_active)
+    if (status !== "all") {
+      reports = reports.filter(r => r.verification_status === status.toUpperCase())
+    }
+    reports = reports.slice(0, limit)
 
     const geojson = {
       type: "FeatureCollection" as const,
-      metadata: { total: reports.length, filter: status, api_version: "1.0.0" },
+      metadata: { total: reports.length, filter: status, api_version: "1.0.0", source: "mock" },
       features: reports
         .filter((r) => r.lat && r.lon)
         .map((r) => ({
@@ -37,7 +42,37 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(geojson, { headers: { "Content-Type": "application/geo+json" } })
+  }
+
+  const sql = getDb()
+  try {
+    const reports = status === "all"
+      ? await sql`SELECT * FROM community_reports WHERE is_active = true ORDER BY reported_at DESC LIMIT ${limit}`
+      : await sql`SELECT * FROM community_reports WHERE is_active = true AND verification_status = ${status.toUpperCase()} ORDER BY reported_at DESC LIMIT ${limit}`
+
+    const geojson = {
+      type: "FeatureCollection" as const,
+      metadata: { total: reports.length, filter: status, api_version: "1.0.0", source: "database" },
+      features: reports
+        .filter((r: any) => r.lat && r.lon)
+        .map((r: any) => ({
+          type: "Feature" as const,
+          id: r.id,
+          geometry: { type: "Point" as const, coordinates: [r.lon, r.lat] },
+          properties: {
+            id: r.id, report_type: r.report_type, hazard_type: r.hazard_type,
+            severity_estimate: r.severity_estimate, title: r.title,
+            description: r.description, country: r.country, region: r.region,
+            locality: r.locality, verification_status: r.verification_status,
+            people_affected_estimate: r.people_affected_estimate,
+            reported_at: r.reported_at,
+          },
+        })),
+    }
+
+    return NextResponse.json(geojson, { headers: { "Content-Type": "application/geo+json" } })
   } catch (error) {
+    console.error("[API /v1/reports] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg, type: "INTERNAL_ERROR" }, { status: 500 })
   }
@@ -45,6 +80,14 @@ export async function GET(request: Request) {
 
 // POST /api/v1/reports - submit community report
 export async function POST(request: Request) {
+  // Reject submissions if database is not configured
+  if (!isDbConfigured()) {
+    return NextResponse.json(
+      { error: "Database not configured. Report submission is disabled.", type: "SERVICE_UNAVAILABLE" },
+      { status: 503 }
+    )
+  }
+
   const sql = getDb()
   try {
     const body = await request.json()
@@ -84,6 +127,7 @@ export async function POST(request: Request) {
       { status: 201 }
     )
   } catch (error) {
+    console.error("[API /v1/reports] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg, type: "INTERNAL_ERROR" }, { status: 500 })
   }

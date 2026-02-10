@@ -1,9 +1,71 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockPipelineStatus } from "@/lib/mock-data"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
+  // Use mock data if database is not configured
+  if (!isDbConfigured()) {
+    console.log("[API /v1/pipeline/status] Using mock data (DATABASE_URL not set)")
+    return NextResponse.json({
+      ...mockPipelineStatus,
+      sources: [
+        {
+          source: "GDACS",
+          last_fetched_at: new Date(Date.now() - 300000).toISOString(),
+          last_event_time: null,
+          total_lifetime_fetches: 150,
+          consecutive_errors: 0,
+          backoff_until: null,
+          latest_ingest: {
+            status: "SUCCESS",
+            records_fetched: 45,
+            records_inserted: 2,
+            records_updated: 3,
+            response_time_ms: 2345,
+            error: null,
+            completed_at: new Date(Date.now() - 297000).toISOString(),
+          },
+        },
+        {
+          source: "NASA_EONET",
+          last_fetched_at: new Date(Date.now() - 600000).toISOString(),
+          last_event_time: null,
+          total_lifetime_fetches: 89,
+          consecutive_errors: 0,
+          backoff_until: null,
+          latest_ingest: {
+            status: "SUCCESS",
+            records_fetched: 120,
+            records_inserted: 1,
+            records_updated: 0,
+            response_time_ms: 1890,
+            error: null,
+            completed_at: new Date(Date.now() - 598000).toISOString(),
+          },
+        },
+        {
+          source: "RELIEFWEB",
+          last_fetched_at: new Date(Date.now() - 900000).toISOString(),
+          last_event_time: null,
+          total_lifetime_fetches: 67,
+          consecutive_errors: 0,
+          backoff_until: null,
+          latest_ingest: {
+            status: "SUCCESS",
+            records_fetched: 25,
+            records_inserted: 0,
+            records_updated: 1,
+            response_time_ms: 3100,
+            error: null,
+            completed_at: new Date(Date.now() - 897000).toISOString(),
+          },
+        },
+      ],
+    })
+  }
+
   const sql = getDb()
   try {
     const [watermarks, latestIngests, alertStats] = await Promise.all([
@@ -29,8 +91,8 @@ export async function GET() {
       `,
     ])
 
-    const sources = watermarks.map((wm) => {
-      const ingest = latestIngests.find((i) => i.source === wm.source)
+    const sources = watermarks.map((wm: any) => {
+      const ingest = latestIngests.find((i: any) => i.source === wm.source)
       return {
         source: wm.source,
         last_fetched_at: wm.last_fetched_at,
@@ -57,6 +119,7 @@ export async function GET() {
       summary: alertStats[0] || {},
     })
   } catch (error) {
+    console.error("[API /v1/pipeline/status] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg, type: "INTERNAL_ERROR" }, { status: 500 })
   }

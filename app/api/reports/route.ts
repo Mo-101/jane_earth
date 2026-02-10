@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockReports } from "@/lib/mock-data"
 
 export async function GET() {
+  // Use mock data if database is not configured
+  if (!isDbConfigured()) {
+    console.log("[API /reports] Using mock data (DATABASE_URL not set)")
+    return NextResponse.json({ count: mockReports.length, reports: mockReports })
+  }
+
   const sql = getDb()
   try {
     const reports = await sql`
@@ -12,12 +19,21 @@ export async function GET() {
     `
     return NextResponse.json({ count: reports.length, reports })
   } catch (error) {
+    console.error("[API /reports] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
+  // Reject submissions if database is not configured
+  if (!isDbConfigured()) {
+    return NextResponse.json(
+      { error: "Database not configured. Report submission is disabled." },
+      { status: 503 }
+    )
+  }
+
   const sql = getDb()
   try {
     const body = await request.json()
@@ -67,6 +83,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, id: result[0].id }, { status: 201 })
   } catch (error) {
+    console.error("[API /reports] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }

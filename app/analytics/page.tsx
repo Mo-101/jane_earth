@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import dynamic from "next/dynamic"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AlertPanel } from "@/components/dashboard/alert-panel"
 import { AlertDetail } from "@/components/dashboard/alert-detail"
@@ -12,6 +11,10 @@ import { CommunityReportForm } from "@/components/dashboard/community-report-for
 import { ReportsList } from "@/components/dashboard/reports-list"
 import { PipelineStatus } from "@/components/dashboard/pipeline-status"
 import { HazardChart } from "@/components/dashboard/hazard-chart"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { cn } from "@/lib/utils"
 import {
   useAlerts,
   useWeather,
@@ -23,34 +26,51 @@ import {
   AlertTriangle,
   Cloud,
   Users,
-  Activity,
   BarChart3,
   Database,
   FileText,
   Plus,
+  Wind,
+  Waves,
+  Sun,
+  Flame,
+  Activity,
+  Globe,
+  TrendingUp,
+  Shield,
+  Clock,
+  MapPin,
 } from "lucide-react"
 
-const AfricaMap = dynamic(
-  () =>
-    import("@/components/dashboard/africa-map").then((mod) => ({
-      default: mod.AfricaMap,
-    })),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex items-center justify-center h-full bg-card rounded-lg border border-border">
-        <div className="flex flex-col items-center gap-3">
-          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-muted-foreground font-mono">
-            Loading Map...
-          </p>
-        </div>
-      </div>
-    ),
-  }
-)
+type AnalyticsView = "overview" | "alerts" | "weather" | "community" | "pipeline"
 
-type AnalyticsView = "overview" | "alerts" | "weather" | "storms" | "community" | "pipeline"
+// Mock summary data for analytics
+const HAZARD_SUMMARIES = {
+  cyclone: {
+    active: 2,
+    atRisk: 850000,
+    nextUpdate: "2026-01-15T18:00:00Z",
+    confidence: "medium" as const,
+  },
+  flood: {
+    active: 3,
+    atRisk: 250000,
+    totalArea: 1250 + 2100 + 680,
+    nextUpdate: "2026-01-15T14:00:00Z",
+  },
+  drought: {
+    active: 3,
+    atRisk: 8500000,
+    duration: 52,
+    severity: "D3" as const,
+  },
+  wildfire: {
+    active: 3,
+    atRisk: 85000,
+    totalArea: 45200,
+    containment: 45,
+  },
+}
 
 export default function AnalyticsPageWrapper() {
   return (
@@ -90,6 +110,15 @@ function AnalyticsPage() {
     [alerts]
   )
 
+  // Count by hazard type
+  const hazardCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    alerts.forEach((alert) => {
+      counts[alert.hazard_type] = (counts[alert.hazard_type] || 0) + 1
+    })
+    return counts
+  }, [alerts])
+
   const handleAlertClick = useCallback((alert: HazardAlert) => {
     setSelectedAlert(alert)
   }, [])
@@ -100,54 +129,210 @@ function AnalyticsPage() {
         {/* ========== COMMAND CENTER (Overview) ========== */}
         {currentView === "overview" && (
           <div className="space-y-4">
+            {/* Severity Stats */}
             <SeverityStats alerts={alerts} />
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Map - 2/3 */}
-              <div className="lg:col-span-2 h-[400px] lg:h-[480px]">
-                <AfricaMap
-                  alerts={alerts}
-                  onAlertClick={handleAlertClick}
-                />
-              </div>
-
-              {/* Alert panel - 1/3 */}
-              <div className="h-[400px] lg:h-[480px] rounded-lg border border-border bg-card overflow-hidden flex flex-col">
-                <div className="px-3 py-2.5 border-b border-border shrink-0">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-4 w-4 text-severity-orange" />
-                    <h2 className="text-sm font-semibold text-foreground">
-                      Active Alerts
-                    </h2>
-                    {alerts.length > 0 && (
-                      <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                        {alerts.length}
-                      </span>
-                    )}
+            {/* Hazard Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Cyclone Card */}
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Wind className="h-4 w-4 text-severity-red" />
+                      Cyclones
+                    </CardTitle>
+                    <Badge variant="outline" className="text-[10px]">
+                      {HAZARD_SUMMARIES.cyclone.active} Active
+                    </Badge>
                   </div>
-                </div>
-                <AlertPanel
-                  alerts={alerts}
-                  onAlertClick={handleAlertClick}
-                  selectedSeverity={severityFilter}
-                  onSeverityFilter={setSeverityFilter}
-                  compact
-                />
-              </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <p className="text-2xl font-bold">{HAZARD_SUMMARIES.cyclone.atRisk.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">People at Risk</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "text-xs px-2 py-0.5 rounded-full",
+                      HAZARD_SUMMARIES.cyclone.confidence === "high" ? "bg-severity-green/20 text-severity-green" :
+                      HAZARD_SUMMARIES.cyclone.confidence === "medium" ? "bg-severity-yellow/20 text-severity-yellow" :
+                      "bg-severity-orange/20 text-severity-orange"
+                    )}>
+                      {HAZARD_SUMMARIES.cyclone.confidence} confidence
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Next update: {new Date(HAZARD_SUMMARIES.cyclone.nextUpdate).toLocaleTimeString()}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Flood Card */}
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Waves className="h-4 w-4 text-severity-orange" />
+                      Floods
+                    </CardTitle>
+                    <Badge variant="outline" className="text-[10px]">
+                      {HAZARD_SUMMARIES.flood.active} Active
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <p className="text-2xl font-bold">{HAZARD_SUMMARIES.flood.atRisk.toLocaleString()}</p>
+                    <p className="text-xs text-muted-foreground">People at Risk</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium">{(HAZARD_SUMMARIES.flood.totalArea).toLocaleString()} km²</p>
+                    <p className="text-xs text-muted-foreground">Total Affected Area</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Drought Card */}
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Sun className="h-4 w-4 text-yellow-500" />
+                      Droughts
+                    </CardTitle>
+                    <Badge variant="outline" className="text-[10px]">
+                      {HAZARD_SUMMARIES.drought.active} Active
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <p className="text-2xl font-bold">{(HAZARD_SUMMARIES.drought.atRisk / 1000000).toFixed(1)}M</p>
+                    <p className="text-xs text-muted-foreground">People Affected</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Max Duration:</span>
+                    <span className="text-sm font-medium">{HAZARD_SUMMARIES.drought.duration} months</span>
+                  </div>
+                  <Badge variant="outline" className="text-[10px] border-purple-500 text-purple-500">
+                    Severity: {HAZARD_SUMMARIES.drought.severity}
+                  </Badge>
+                </CardContent>
+              </Card>
+
+              {/* Wildfire Card */}
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <Flame className="h-4 w-4 text-severity-red" />
+                      Wildfires
+                    </CardTitle>
+                    <Badge variant="outline" className="text-[10px]">
+                      {HAZARD_SUMMARIES.wildfire.active} Active
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <p className="text-2xl font-bold">{(HAZARD_SUMMARIES.wildfire.totalArea / 100).toFixed(0)}</p>
+                    <p className="text-xs text-muted-foreground">km² Burned</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Containment</span>
+                      <span className="font-medium">{HAZARD_SUMMARIES.wildfire.containment}%</span>
+                    </div>
+                    <Progress value={HAZARD_SUMMARIES.wildfire.containment} className="h-1.5" />
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            {/* Weather + Hazard chart */}
+            {/* Regional Activity */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-primary" />
+                  Regional Activity
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <CountryBreakdown alerts={alerts} />
+              </CardContent>
+            </Card>
+
+            {/* Weather + Hazard Distribution */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               <WeatherPanel data={weatherData} isLoading={weatherLoading} />
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <BarChart3 className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-foreground">
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-primary" />
                     Hazard Distribution
-                  </h3>
-                </div>
-                <HazardChart alerts={alerts} />
-              </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <HazardChart alerts={alerts} />
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Quick Stats Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="bg-card border-border">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <Shield className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{alerts.length}</p>
+                      <p className="text-xs text-muted-foreground">Total Alerts</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-severity-red/10 flex items-center justify-center">
+                      <AlertTriangle className="h-5 w-5 text-severity-red" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{alertCounts.red}</p>
+                      <p className="text-xs text-muted-foreground">Critical (RED)</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-severity-orange/10 flex items-center justify-center">
+                      <Activity className="h-5 w-5 text-severity-orange" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{Object.keys(hazardCounts).length}</p>
+                      <p className="text-xs text-muted-foreground">Hazard Types</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-border">
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-severity-green/10 flex items-center justify-center">
+                      <TrendingUp className="h-5 w-5 text-severity-green" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">98%</p>
+                      <p className="text-xs text-muted-foreground">Coverage</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
@@ -189,46 +374,6 @@ function AnalyticsPage() {
           </div>
         )}
 
-        {/* ========== STORM TRACKER ========== */}
-        {currentView === "storms" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-severity-orange" />
-              <h2 className="text-lg font-bold text-foreground">
-                Storm Tracker
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2" style={{ height: "calc(100vh - 200px)" }}>
-                <AfricaMap
-                  alerts={alerts.filter(
-                    (a) =>
-                      a.hazard_type === "CYCLONE" ||
-                      a.hazard_type === "STORM"
-                  )}
-                  onAlertClick={handleAlertClick}
-                />
-              </div>
-              <div className="rounded-lg border border-border bg-card overflow-hidden flex flex-col" style={{ height: "calc(100vh - 200px)" }}>
-                <div className="px-3 py-2.5 border-b border-border shrink-0">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Active Storms
-                  </h3>
-                </div>
-                <AlertPanel
-                  alerts={alerts.filter(
-                    (a) =>
-                      a.hazard_type === "CYCLONE" ||
-                      a.hazard_type === "STORM"
-                  )}
-                  onAlertClick={handleAlertClick}
-                  compact
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* ========== COMMUNITY FIELD REPORTS ========== */}
         {currentView === "community" && (
           <div className="space-y-4">
@@ -240,30 +385,34 @@ function AnalyticsPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <Plus className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-foreground">
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Plus className="h-4 w-4 text-primary" />
                     Submit a Field Report
-                  </h3>
-                </div>
-                <CommunityReportForm
-                  onSubmitSuccess={() => mutateReports()}
-                />
-              </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <CommunityReportForm
+                    onSubmitSuccess={() => mutateReports()}
+                  />
+                </CardContent>
+              </Card>
 
-              <div className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <FileText className="h-4 w-4 text-primary" />
-                  <h3 className="text-sm font-semibold text-foreground">
+              <Card className="bg-card border-border">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-primary" />
                     Recent Reports
-                  </h3>
-                  <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                    {reports.length}
-                  </span>
-                </div>
-                <ReportsList reports={reports} isLoading={reportsLoading} />
-              </div>
+                    <Badge variant="secondary" className="ml-auto text-[10px]">
+                      {reports.length}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ReportsList reports={reports} isLoading={reportsLoading} />
+                </CardContent>
+              </Card>
             </div>
           </div>
         )}
@@ -324,6 +473,7 @@ function CountryBreakdown({ alerts }: { alerts: HazardAlert[] }) {
     <div className="space-y-2">
       {sorted.map(([country, data]) => (
         <div key={country} className="flex items-center gap-3">
+          <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <span className="text-xs text-muted-foreground w-28 truncate">
             {country}
           </span>

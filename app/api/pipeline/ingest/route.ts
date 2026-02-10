@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
 
 const SOURCES = ["GDACS", "NASA_EONET", "RELIEFWEB"] as const
 const SOURCE_ENDPOINTS: Record<string, string> = {
@@ -38,6 +38,14 @@ async function fetchWithRetry(
 }
 
 export async function POST(request: Request) {
+  // Reject if database is not configured
+  if (!isDbConfigured()) {
+    return NextResponse.json(
+      { error: "Database not configured. Ingestion is disabled.", type: "SERVICE_UNAVAILABLE" },
+      { status: 503 }
+    )
+  }
+
   const origin = new URL(request.url).origin
   const sql = getDb()
   const results: Array<{

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
 
 interface EONETEvent {
   id: string
@@ -28,7 +28,10 @@ function isInAfrica(coords: number[]): boolean {
 
 export async function GET() {
   const startTime = Date.now()
-  const sql = getDb()
+  
+  // If database not configured, just fetch and return data without storing
+  const hasDb = isDbConfigured()
+  const sql = hasDb ? getDb() : null
 
   try {
     const controller = new AbortController()
@@ -53,57 +56,74 @@ export async function GET() {
     let inserted = 0
     let updated = 0
 
-    for (const event of africaEvents) {
-      const lastGeo = event.geometry[event.geometry.length - 1]
-      const externalId = `NASA-${event.id}`
+    // Only store in database if configured
+    if (hasDb && sql) {
+      for (const event of africaEvents) {
+        const lastGeo = event.geometry[event.geometry.length - 1]
+        const externalId = `NASA-${event.id}`
 
-      try {
-        const result = await sql`
-          INSERT INTO hazard_alerts (
-            external_id, source, hazard_type, severity, title, description,
-            latitude, longitude, event_start, is_active, source_url
-          ) VALUES (
-            ${externalId}, 'NASA_EONET', ${mapCategory(event.categories)},
-            'YELLOW',
-            ${event.title},
-            ${`NASA EONET: ${event.categories?.[0]?.title || "Natural Event"}`},
-            ${lastGeo.coordinates[1]}, ${lastGeo.coordinates[0]},
-            ${event.geometry[0]?.date || null},
-            true,
-            ${event.sources?.[0]?.url || null}
-          )
-          ON CONFLICT (external_id) DO UPDATE SET
-            latitude = EXCLUDED.latitude,
-            longitude = EXCLUDED.longitude,
-            is_active = true,
-            updated_at = NOW()
-          RETURNING (xmax = 0) AS is_insert
-        `
-        if (result[0]?.is_insert) inserted++
-        else updated++
-      } catch {
-        // Skip individual errors
+        try {
+          const result = await sql`
+            INSERT INTO hazard_alerts (
+              external_id, source, hazard_type, severity, title, description,
+              latitude, longitude, event_start, is_active, source_url
+            ) VALUES (
+              ${externalId}, 'NASA_EONET', ${mapCategory(event.categories)},
+              'YELLOW',
+              ${event.title},
+              ${`NASA EONET: ${event.categories?.[0]?.title || "Natural Event"}`},
+              ${lastGeo.coordinates[1]}, ${lastGeo.coordinates[0]},
+              ${event.geometry[0]?.date || null},
+              true,
+              ${event.sources?.[0]?.url || null}
+            )
+            ON CONFLICT (external_id) DO UPDATE SET
+              latitude = EXCLUDED.latitude,
+              longitude = EXCLUDED.longitude,
+              is_active = true,
+              updated_at = NOW()
+            RETURNING (xmax = 0) AS is_insert
+          `
+          if (result[0]?.is_insert) inserted++
+          else updated++
+        } catch {
+          // Skip individual errors
+        }
       }
+
+      const elapsed = Date.now() - startTime
+      await sql`
+        INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, records_updated, response_time_ms, completed_at)
+        VALUES ('NASA_EONET', 'events', 'SUCCESS', ${africaEvents.length}, ${inserted}, ${updated}, ${elapsed}, NOW())
+      `
     }
 
     const elapsed = Date.now() - startTime
-    await sql`
-      INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, records_updated, response_time_ms, completed_at)
-      VALUES ('NASA_EONET', 'events', 'SUCCESS', ${africaEvents.length}, ${inserted}, ${updated}, ${elapsed}, NOW())
-    `
-
     return NextResponse.json({
-      source: "NASA_EONET", total_fetched: events.length,
-      africa_filtered: africaEvents.length, inserted, updated, elapsed_ms: elapsed,
+      source: "NASA_EONET", 
+      total_fetched: events.length,
+      africa_filtered: africaEvents.length, 
+      inserted, 
+      updated, 
+      elapsed_ms: elapsed,
+      database_stored: hasDb,
+      events: africaEvents.map(e => ({
+        id: e.id,
+        title: e.title,
+        category: mapCategory(e.categories),
+        coordinates: e.geometry?.[e.geometry.length - 1]?.coordinates,
+      })),
     })
   } catch (error) {
     const elapsed = Date.now() - startTime
     const errMsg = error instanceof Error ? error.message : "Unknown error"
 
-    await sql`
-      INSERT INTO data_ingestion_log (source, endpoint, status, error_message, response_time_ms, completed_at)
-      VALUES ('NASA_EONET', 'events', 'ERROR', ${errMsg}, ${elapsed}, NOW())
-    `.catch(() => {})
+    if (hasDb && sql) {
+      await sql`
+        INSERT INTO data_ingestion_log (source, endpoint, status, error_message, response_time_ms, completed_at)
+        VALUES ('NASA_EONET', 'events', 'ERROR', ${errMsg}, ${elapsed}, NOW())
+      `.catch(() => {})
+    }
 
     return NextResponse.json({ error: errMsg, source: "NASA_EONET" }, { status: 500 })
   }

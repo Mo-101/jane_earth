@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Cloud,
   Users,
-  Activity,
   BarChart3,
   Database,
   Settings,
@@ -31,7 +30,6 @@ const NAV_ITEMS = [
   { href: "/analytics", view: null, label: "Command Center", icon: BarChart3, section: "Operations" },
   { href: "/analytics?view=alerts", view: "alerts", label: "Active Alerts", icon: AlertTriangle, section: "Operations" },
   { href: "/analytics?view=weather", view: "weather", label: "Weather Intel", icon: Cloud, section: "Intelligence" },
-  { href: "/analytics?view=storms", view: "storms", label: "Storm Tracker", icon: Activity, section: "Intelligence" },
   { href: "/analytics?view=community", view: "community", label: "Field Reports", icon: Users, section: "Community" },
   { href: "/analytics?view=pipeline", view: "pipeline", label: "Data Pipeline", icon: Database, section: "System" },
 ]
@@ -114,7 +112,7 @@ export function DashboardSidebar({ isOpen, onClose, alertCounts }: SidebarProps)
       <div className="hidden lg:flex items-center gap-2.5 px-4 h-14 border-b border-border shrink-0">
         <div className="relative">
           <div className="h-8 w-8 rounded-md bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Activity className="h-4 w-4 text-primary" />
+            <BarChart3 className="h-4 w-4 text-primary" />
           </div>
           <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-severity-green border-2 border-card animate-severity-pulse" />
         </div>
