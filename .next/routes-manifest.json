@@ -1,0 +1,180 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "priority": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/v1/hazards/[type]",
+      "regex": "^/api/v1/hazards/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtype": "nxtPtype"
+      },
+      "namedRegex": "^/api/v1/hazards/(?<nxtPtype>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/v1/reports/[id]/verify",
+      "regex": "^/api/v1/reports/([^/]+?)/verify(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/v1/reports/(?<nxtPid>[^/]+?)/verify(?:/)?$"
+    },
+    {
+      "page": "/api/v1/tiles/[layer]/[z]/[x]/[y]",
+      "regex": "^/api/v1/tiles/([^/]+?)/([^/]+?)/([^/]+?)/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPlayer": "nxtPlayer",
+        "nxtPz": "nxtPz",
+        "nxtPx": "nxtPx",
+        "nxtPy": "nxtPy"
+      },
+      "namedRegex": "^/api/v1/tiles/(?<nxtPlayer>[^/]+?)/(?<nxtPz>[^/]+?)/(?<nxtPx>[^/]+?)/(?<nxtPy>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/analytics",
+      "regex": "^/analytics(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/analytics(?:/)?$"
+    },
+    {
+      "page": "/api/alerts",
+      "regex": "^/api/alerts(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/alerts(?:/)?$"
+    },
+    {
+      "page": "/api/alerts/gdacs",
+      "regex": "^/api/alerts/gdacs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/alerts/gdacs(?:/)?$"
+    },
+    {
+      "page": "/api/alerts/nasa",
+      "regex": "^/api/alerts/nasa(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/alerts/nasa(?:/)?$"
+    },
+    {
+      "page": "/api/alerts/reliefweb",
+      "regex": "^/api/alerts/reliefweb(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/alerts/reliefweb(?:/)?$"
+    },
+    {
+      "page": "/api/pipeline/ingest",
+      "regex": "^/api/pipeline/ingest(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/pipeline/ingest(?:/)?$"
+    },
+    {
+      "page": "/api/pipeline/status",
+      "regex": "^/api/pipeline/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/pipeline/status(?:/)?$"
+    },
+    {
+      "page": "/api/reports",
+      "regex": "^/api/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/reports(?:/)?$"
+    },
+    {
+      "page": "/api/v1/hazards/realtime",
+      "regex": "^/api/v1/hazards/realtime(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/hazards/realtime(?:/)?$"
+    },
+    {
+      "page": "/api/v1/health",
+      "regex": "^/api/v1/health(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/health(?:/)?$"
+    },
+    {
+      "page": "/api/v1/pipeline/status",
+      "regex": "^/api/v1/pipeline/status(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/pipeline/status(?:/)?$"
+    },
+    {
+      "page": "/api/v1/reports",
+      "regex": "^/api/v1/reports(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/reports(?:/)?$"
+    },
+    {
+      "page": "/api/v1/tiles/rainviewer",
+      "regex": "^/api/v1/tiles/rainviewer(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/tiles/rainviewer(?:/)?$"
+    },
+    {
+      "page": "/api/v1/weather/grid",
+      "regex": "^/api/v1/weather/grid(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/v1/weather/grid(?:/)?$"
+    },
+    {
+      "page": "/api/weather",
+      "regex": "^/api/weather(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/weather(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

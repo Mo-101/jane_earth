@@ -1,0 +1,9 @@
+{
+  "/analytics/page": "app/analytics/page.js",
+  "/api/alerts/route": "app/api/alerts/route.js",
+  "/api/pipeline/status/route": "app/api/pipeline/status/route.js",
+  "/api/reports/route": "app/api/reports/route.js",
+  "/api/v1/tiles/rainviewer/route": "app/api/v1/tiles/rainviewer/route.js",
+  "/api/weather/route": "app/api/weather/route.js",
+  "/page": "app/page.js"
+}
