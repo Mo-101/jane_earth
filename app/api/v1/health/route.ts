@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockAlerts, mockPipelineStatus } from "@/lib/mock-data"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -7,6 +8,38 @@ export const revalidate = 0
 export async function GET() {
   const checks: Record<string, { status: string; latency_ms?: number; detail?: string }> = {}
   let overallHealthy = true
+
+  // If database is not configured, return mock health status
+  if (!isDbConfigured()) {
+    console.log("[API /v1/health] Using mock data (DATABASE_URL not set)")
+    
+    checks.database = {
+      status: "MOCK",
+      detail: "DATABASE_URL not set - using mock data",
+    }
+    
+    checks.alert_data = {
+      status: "UP",
+      detail: `${mockAlerts.length} mock active alerts, 2 RED, source: mock data`,
+    }
+    
+    checks.sources = {
+      status: "UP",
+      detail: "Mock pipeline sources available",
+    }
+
+    return NextResponse.json(
+      {
+        status: "HEALTHY (MOCK MODE)",
+        version: "1.0.0",
+        service: "afro-storm",
+        timestamp: new Date().toISOString(),
+        uptime_note: "Running in mock mode - no database configured",
+        checks,
+      },
+      { status: 200 }
+    )
+  }
 
   // 1. Database connectivity check
   const dbStart = Date.now()

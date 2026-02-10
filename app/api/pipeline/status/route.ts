@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
+import { mockPipelineStatus } from "@/lib/mock-data"
 
 export async function GET() {
+  // Use mock data if database is not configured
+  if (!isDbConfigured()) {
+    console.log("[API /pipeline/status] Using mock data (DATABASE_URL not set)")
+    return NextResponse.json(mockPipelineStatus)
+  }
+
   const sql = getDb()
   try {
     const latestBySource = await sql`
@@ -52,6 +59,7 @@ export async function GET() {
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
+    console.error("[API /pipeline/status] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg }, { status: 500 })
   }

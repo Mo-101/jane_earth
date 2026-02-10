@@ -6,6 +6,12 @@ import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { AlertDetail } from "@/components/dashboard/alert-detail"
 import { useAlerts } from "@/hooks/use-afro-storm"
 import type { HazardAlert } from "@/lib/types"
+import {
+  CycloneTrackVisualization,
+  FloodMonitorVisualization,
+  DroughtMonitorVisualization,
+  WildfireTrackerVisualization,
+} from "@/components/visualizations"
 
 const AfricaMap = dynamic(
   () =>
@@ -75,6 +81,22 @@ export default function MapPage() {
 
         {/* Map */}
         <AfricaMap alerts={alerts} onAlertClick={handleAlertClick} borderless />
+
+        {/* Bottom Panel with Visualizations */}
+        <div className="absolute bottom-0 left-0 right-0 z-[500] max-h-[45vh] overflow-y-auto">
+          <div className="bg-card/95 backdrop-blur-md border-t border-border p-4">
+            <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+              Live Hazard Tracking & Monitoring
+            </h2>
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <CycloneTrackVisualization />
+              <FloodMonitorVisualization />
+              <DroughtMonitorVisualization />
+              <WildfireTrackerVisualization />
+            </div>
+          </div>
+        </div>
       </main>
 
       {selectedAlert && (

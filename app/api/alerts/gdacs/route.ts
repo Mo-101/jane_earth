@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
 
 interface GDACSFeature {
   properties: {
@@ -66,7 +66,10 @@ const AFRICA_NAMES = new Set([
 
 export async function GET() {
   const startTime = Date.now()
-  const sql = getDb()
+  
+  // If database not configured, just fetch and return data without storing
+  const hasDb = isDbConfigured()
+  const sql = hasDb ? getDb() : null
 
   try {
     const controller = new AbortController()
@@ -91,64 +94,82 @@ export async function GET() {
     let inserted = 0
     let updated = 0
 
-    for (const feature of africaFeatures) {
-      const p = feature.properties
-      const coords = feature.geometry?.coordinates
-      const externalId = `GDACS-${p.alertid || p.eventname}`
+    // Only store in database if configured
+    if (hasDb && sql) {
+      for (const feature of africaFeatures) {
+        const p = feature.properties
+        const coords = feature.geometry?.coordinates
+        const externalId = `GDACS-${p.alertid || p.eventname}`
 
-      try {
-        // Atomic upsert - no race conditions
-        const result = await sql`
-          INSERT INTO hazard_alerts (
-            external_id, source, hazard_type, severity, title, description,
-            country, latitude, longitude, event_start, event_end,
-            is_active, population_affected, source_url
-          ) VALUES (
-            ${externalId}, 'GDACS', ${mapEventType(p.eventtype || "")},
-            ${mapAlertLevel(p.alertlevel || "")},
-            ${p.eventname || p.name || "Unknown Event"},
-            ${p.description || null},
-            ${p.country || null},
-            ${coords ? coords[1] : null}, ${coords ? coords[0] : null},
-            ${p.fromdate || null}, ${p.todate || null},
-            true,
-            ${p.population?.value || null},
-            ${p.url?.report || null}
-          )
-          ON CONFLICT (external_id) DO UPDATE SET
-            severity = EXCLUDED.severity,
-            description = EXCLUDED.description,
-            event_end = EXCLUDED.event_end,
-            population_affected = EXCLUDED.population_affected,
-            is_active = true,
-            updated_at = NOW()
-          RETURNING (xmax = 0) AS is_insert
-        `
-        if (result[0]?.is_insert) inserted++
-        else updated++
-      } catch {
-        // Skip individual record errors - don't break the batch
+        try {
+          // Atomic upsert - no race conditions
+          const result = await sql`
+            INSERT INTO hazard_alerts (
+              external_id, source, hazard_type, severity, title, description,
+              country, latitude, longitude, event_start, event_end,
+              is_active, population_affected, source_url
+            ) VALUES (
+              ${externalId}, 'GDACS', ${mapEventType(p.eventtype || "")},
+              ${mapAlertLevel(p.alertlevel || "")},
+              ${p.eventname || p.name || "Unknown Event"},
+              ${p.description || null},
+              ${p.country || null},
+              ${coords ? coords[1] : null}, ${coords ? coords[0] : null},
+              ${p.fromdate || null}, ${p.todate || null},
+              true,
+              ${p.population?.value || null},
+              ${p.url?.report || null}
+            )
+            ON CONFLICT (external_id) DO UPDATE SET
+              severity = EXCLUDED.severity,
+              description = EXCLUDED.description,
+              event_end = EXCLUDED.event_end,
+              population_affected = EXCLUDED.population_affected,
+              is_active = true,
+              updated_at = NOW()
+            RETURNING (xmax = 0) AS is_insert
+          `
+          if (result[0]?.is_insert) inserted++
+          else updated++
+        } catch {
+          // Skip individual record errors - don't break the batch
+        }
       }
+
+      const elapsed = Date.now() - startTime
+      await sql`
+        INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, records_updated, response_time_ms, completed_at)
+        VALUES ('GDACS', 'geteventlist', 'SUCCESS', ${africaFeatures.length}, ${inserted}, ${updated}, ${elapsed}, NOW())
+      `
     }
 
     const elapsed = Date.now() - startTime
-    await sql`
-      INSERT INTO data_ingestion_log (source, endpoint, status, records_fetched, records_inserted, records_updated, response_time_ms, completed_at)
-      VALUES ('GDACS', 'geteventlist', 'SUCCESS', ${africaFeatures.length}, ${inserted}, ${updated}, ${elapsed}, NOW())
-    `
-
     return NextResponse.json({
-      source: "GDACS", total_fetched: features.length,
-      africa_filtered: africaFeatures.length, inserted, updated, elapsed_ms: elapsed,
+      source: "GDACS", 
+      total_fetched: features.length,
+      africa_filtered: africaFeatures.length, 
+      inserted, 
+      updated, 
+      elapsed_ms: elapsed,
+      database_stored: hasDb,
+      features: africaFeatures.map(f => ({
+        type: f.properties.eventtype,
+        name: f.properties.eventname || f.properties.name,
+        severity: mapAlertLevel(f.properties.alertlevel || ""),
+        country: f.properties.country,
+        coordinates: f.geometry?.coordinates,
+      })),
     })
   } catch (error) {
     const elapsed = Date.now() - startTime
     const errMsg = error instanceof Error ? error.message : "Unknown error"
 
-    await sql`
-      INSERT INTO data_ingestion_log (source, endpoint, status, error_message, response_time_ms, completed_at)
-      VALUES ('GDACS', 'geteventlist', 'ERROR', ${errMsg}, ${elapsed}, NOW())
-    `.catch(() => {})
+    if (hasDb && sql) {
+      await sql`
+        INSERT INTO data_ingestion_log (source, endpoint, status, error_message, response_time_ms, completed_at)
+        VALUES ('GDACS', 'geteventlist', 'ERROR', ${errMsg}, ${elapsed}, NOW())
+      `.catch(() => {})
+    }
 
     return NextResponse.json({ error: errMsg, source: "GDACS" }, { status: 500 })
   }

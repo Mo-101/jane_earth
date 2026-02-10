@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { getDb } from "@/lib/db"
+import { getDb, isDbConfigured } from "@/lib/db"
 
 // POST /api/v1/reports/{id}/verify
 // Body: { action: "VERIFIED" | "REJECTED", verified_by: string }
@@ -14,6 +14,14 @@ export async function POST(
     return NextResponse.json(
       { error: "Invalid report ID", type: "VALIDATION_ERROR" },
       { status: 400 }
+    )
+  }
+
+  // Reject if database is not configured
+  if (!isDbConfigured()) {
+    return NextResponse.json(
+      { error: "Database not configured. Verification is disabled.", type: "SERVICE_UNAVAILABLE" },
+      { status: 503 }
     )
   }
 
@@ -78,6 +86,7 @@ export async function POST(
       promoted_to_alert: action === "VERIFIED",
     })
   } catch (error) {
+    console.error("[API /v1/reports/verify] Database error:", error)
     const errMsg = error instanceof Error ? error.message : "Unknown error"
     return NextResponse.json({ error: errMsg, type: "INTERNAL_ERROR" }, { status: 500 })
   }
